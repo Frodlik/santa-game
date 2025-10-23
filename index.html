@@ -161,45 +161,6 @@
             display: none !important;
         }
 
-        .mobile-controls {
-            position: absolute;
-            bottom: 50px;
-            right: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            z-index: 50;
-        }
-
-        .mobile-row {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-        }
-
-        .mobile-btn {
-            width: 70px;
-            height: 70px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.85);
-            border: 3px solid #4CAF50;
-            font-size: 32px;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            user-select: none;
-            -webkit-tap-highlight-color: transparent;
-        }
-
-        .mobile-btn:active {
-            transform: scale(0.9);
-            background: rgba(76, 175, 80, 0.3);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-        }
-
         @media (max-width: 768px) {
             .ui-container {
                 padding: 10px;
@@ -216,16 +177,6 @@
             
             .menu h1 {
                 font-size: 24px;
-            }
-
-            .mobile-controls {
-                display: flex !important;
-            }
-        }
-
-        @media (min-width: 769px) {
-            .mobile-controls {
-                display: none !important;
             }
         }
     </style>
@@ -285,19 +236,6 @@
             </div>
             <button id="playAgainBtn" class="menu-btn">🔄 Грати знову</button>
             <button id="mainMenuBtn" class="menu-btn">🏠 Головне меню</button>
-        </div>
-
-        <div id="mobileControls" class="mobile-controls hidden">
-            <div class="mobile-row">
-                <button id="jumpBtn" class="mobile-btn">⬆️</button>
-            </div>
-            <div class="mobile-row">
-                <button id="leftBtn" class="mobile-btn">⬅️</button>
-                <button id="rightBtn" class="mobile-btn">➡️</button>
-            </div>
-            <div class="mobile-row">
-                <button id="slideBtn" class="mobile-btn">⬇️</button>
-            </div>
         </div>
     </div>
 
@@ -565,7 +503,6 @@
                 case 'snowman': obstacle = createSnowman(); break;
                 case 'tree': obstacle = createTreeObstacle(); break;
                 case 'rock': obstacle = createRock(); break;
-                default: obstacle = createBox();
             }
             
             obstacle.position.x = lanes[lane];
@@ -637,16 +574,6 @@
             return rock;
         }
 
-        function createBox() {
-            const box = new THREE.Mesh(
-                new THREE.BoxGeometry(1.5, 1.5, 1.5),
-                new THREE.MeshPhongMaterial({ color: 0x8b4513 })
-            );
-            box.position.y = 0.75;
-            box.castShadow = true;
-            return box;
-        }
-
         function createGift(lane) {
             const group = new THREE.Group();
             
@@ -686,24 +613,6 @@
             document.getElementById('menuBtn').addEventListener('click', showMainMenu);
             document.getElementById('playAgainBtn').addEventListener('click', restartGame);
             document.getElementById('mainMenuBtn').addEventListener('click', showMainMenu);
-            
-            const btns = {
-                left: document.getElementById('leftBtn'),
-                right: document.getElementById('rightBtn'),
-                jump: document.getElementById('jumpBtn'),
-                slide: document.getElementById('slideBtn')
-            };
-
-            ['touchstart', 'mousedown'].forEach(ev => {
-                btns.left.addEventListener(ev, (e) => { e.preventDefault(); moveLeft(); }, { passive: false });
-                btns.right.addEventListener(ev, (e) => { e.preventDefault(); moveRight(); }, { passive: false });
-                btns.jump.addEventListener(ev, (e) => { e.preventDefault(); jump(); }, { passive: false });
-                btns.slide.addEventListener(ev, (e) => { e.preventDefault(); slide(); }, { passive: false });
-            });
-
-            ['touchend', 'mouseup'].forEach(ev => {
-                btns.slide.addEventListener(ev, (e) => { e.preventDefault(); stopSlide(); }, { passive: false });
-            });
             
             document.addEventListener('keydown', handleKeyDown);
             document.addEventListener('keyup', handleKeyUp);
@@ -747,7 +656,7 @@
         }
 
         function moveLeft() {
-            if (currentLane > 0 && !isJumping) {
+            if (currentLane > 0 && !isJumping && santa) {
                 currentLane--;
                 targetLaneX = lanes[currentLane];
                 
@@ -758,7 +667,7 @@
         }
 
         function moveRight() {
-            if (currentLane < 2 && !isJumping) {
+            if (currentLane < 2 && !isJumping && santa) {
                 currentLane++;
                 targetLaneX = lanes[currentLane];
                 
@@ -769,7 +678,7 @@
         }
 
         function jump() {
-            if (!isJumping && !isSliding) {
+            if (!isJumping && !isSliding && santa) {
                 isJumping = true;
                 jumpVelocity = 0.3;
                 
@@ -780,7 +689,7 @@
         }
 
         function slide() {
-            if (!isJumping && !isSliding) {
+            if (!isJumping && !isSliding && santa) {
                 isSliding = true;
                 slideTimer = 30;
                 santa.position.y = -0.3;
@@ -807,6 +716,7 @@
             if (santa) {
                 santa.position.x = targetLaneX;
                 santa.position.y = 0;
+                santa.scale.set(0.03, 0.03, 0.03);
             }
             
             obstacles.forEach(obj => scene.remove(obj));
@@ -819,11 +729,6 @@
             createInitialTrees();
             
             document.getElementById('startMenu').classList.add('hidden');
-            
-            // Показати мобільні кнопки на мобільних пристроях
-            if (window.innerWidth <= 768) {
-                document.getElementById('mobileControls').classList.remove('hidden');
-            }
             
             updateUI();
             animate();
@@ -904,7 +809,7 @@
             }
             
             // Анімація бігу
-            if (santa && !isJumping) {
+            if (santa && !isJumping && !isSliding) {
                 santa.position.y = Math.abs(Math.sin(Date.now() * 0.01)) * 0.1;
                 santa.rotation.z = Math.sin(Date.now() * 0.01) * 0.05;
             }
@@ -917,10 +822,10 @@
             
             gameSpeed += 0.0001;
             
-            // Генерація об'єктів
+            // Генерація об'єктів - видалено 'box' з типів перешкод
             if (Math.random() < 0.02) {
                 const lane = Math.floor(Math.random() * 3);
-                const types = ['snowman', 'tree', 'rock', 'box'];
+                const types = ['snowman', 'tree', 'rock']; // Видалено 'box'
                 const type = types[Math.floor(Math.random() * types.length)];
                 createObstacle(type, lane);
             }
@@ -1067,7 +972,6 @@
             document.getElementById('pauseMenu').classList.add('hidden');
             document.getElementById('gameOverMenu').classList.add('hidden');
             document.getElementById('startMenu').classList.remove('hidden');
-            document.getElementById('mobileControls').classList.add('hidden');
         }
 
         function toggleSound() {
