@@ -161,6 +161,20 @@
             display: none !important;
         }
 
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 20px;
+            text-align: center;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+        }
+
         @media (max-width: 768px) {
             .ui-container {
                 padding: 10px;
@@ -182,6 +196,8 @@
     </style>
 </head>
 <body>
+    <div id="loading">Завантаження моделі Санти...</div>
+    
     <div class="game-container">
         <canvas id="gameCanvas"></canvas>
         
@@ -214,7 +230,6 @@
             </div>
             <div class="controls-info">
                 <h3>Керування:</h3>
-                <p>🖱️ ПК: Стрілки ← → або A/D</p>
                 <p>📱 Мобільний: Свайп вліво/вправо</p>
                 <p>⬆️ Стрибок: Пробіл або свайп вгору</p>
                 <p>⬇️ Слайд: Стрілка вниз або свайп вниз</p>
@@ -240,7 +255,9 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/libs/fflate.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+
     <script>
         let scene, camera, renderer;
         let santa, ground, obstacles = [], gifts = [], particles = [];
@@ -251,6 +268,7 @@
         let gameSpeed = 0.3;
         let soundEnabled = true;
         let backgroundTrees = [];
+        let santaMixer = null; // Додано міксер для анімації
 
         const LANE_WIDTH = 3;
         const lanes = [-LANE_WIDTH, 0, LANE_WIDTH];
@@ -435,34 +453,51 @@
         }
 
         function createSanta() {
-            const loader = new THREE.GLTFLoader();
-    
-            loader.load('models/santa.glb',
-            function(gltf) {
-                const model = gltf.scene;
+            const loader = new THREE.FBXLoader();
             
-                // Масштабування та позиціонування
-                model.scale.set(0.03, 0.03, 0.03);
-                model.position.set(0, 0, 5);
-                model.rotation.y = Math.PI;
-            
-                // Налаштування тіней
-                model.traverse((child) => {
-                    if (child.isMesh) {
-                        child.castShadow = true;
-                        child.receiveShadow = true;
+            // Шлях до вашого FBX файлу з Mixamo
+            loader.load(
+                'models/santa.fbx',
+                function(object) {
+                    // Mixamo моделі зазвичай великі, тому зменшуємо
+                    object.scale.set(0.01, 0.01, 0.01);
+                    object.position.set(0, 0, 5);
+                    object.rotation.y = Math.PI; // Поворот обличчям вперед
+                    
+                    // Налаштування тіней
+                    object.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+                    
+                    // Анімація
+                    if (object.animations && object.animations.length > 0) {
+                        santaMixer = new THREE.AnimationMixer(object);
+                        const action = santaMixer.clipAction(object.animations[0]);
+                        action.play();
+                        
+                        console.log('✅ Анімація запущена! Кількість анімацій:', object.animations.length);
+                    } else {
+                        console.log('⚠️ Анімації не знайдено');
                     }
-                });
-            
-                scene.add(model);
-                santa = model;
-            
-                console.log('Модель Санти завантажена!');
-            },
-            // Обробка помилок
-            function(error) {
-                console.error('Помилка завантаження моделі:', error);
-            }
+                    
+                    scene.add(object);
+                    santa = object;
+                    
+                    document.getElementById('loading').style.display = 'none';
+                    console.log('✅ Модель Санти завантажена!');
+                },
+                function(xhr) {
+                    const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
+                    document.getElementById('loading').innerHTML = `Завантаження: ${percent}%<br><small>Розмістіть файл santa.fbx в папці models/</small>`;
+                },
+                function(error) {
+                    console.error('❌ Помилка завантаження FBX:', error);
+                    document.getElementById('loading').innerHTML = '❌ Помилка завантаження моделі!<br><small>Перевірте: models/santa.fbx</small>';
+                    document.getElementById('loading').style.color = '#ff0000';
+                }
             );
         }
 
@@ -783,6 +818,11 @@
             
             const deltaTime = clock.getDelta();
             
+            // Оновлюємо анімацію
+            if (santaMixer) {
+                santaMixer.update(deltaTime);
+            }
+            
             // Плавний рух по доріжках
             if (santa && santa.position.x !== targetLaneX) {
                 santa.position.x += (targetLaneX - santa.position.x) * 0.2;
@@ -806,12 +846,6 @@
                 if (slideTimer <= 0) {
                     stopSlide();
                 }
-            }
-            
-            // Анімація бігу
-            if (santa && !isJumping && !isSliding) {
-                santa.position.y = Math.abs(Math.sin(Date.now() * 0.01)) * 0.1;
-                santa.rotation.z = Math.sin(Date.now() * 0.01) * 0.05;
             }
             
             // Оновлення камери
