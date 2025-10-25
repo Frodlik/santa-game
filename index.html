@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Святий Миколай: Зимова Пригода 3D</title>
+    <link rel="preload" href="models/santa.fbx" as="fetch" crossorigin>
+    <link rel="preload" href="models/tree.glb" as="fetch" crossorigin>
     <style>
         * {
             margin: 0;
@@ -256,6 +258,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/libs/fflate.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 
     <script>
         let scene, camera, renderer;
@@ -274,6 +277,11 @@
         const lanes = [-LANE_WIDTH, 0, LANE_WIDTH];
         let currentLane = 1;
         let targetLaneX = 0;
+
+        let treeModelCache = null;
+        let treeModels = [];
+        let modelsLoaded = 0;
+        let totalModels = 2; 
 
         let isJumping = false;
         let jumpVelocity = 0;
@@ -320,12 +328,59 @@
             
             setupLighting();
             createWorld();
-            createSanta();
+            loadAllModels();
             setupEventListeners();
             setupTouchControls();
             updateBestScore();
             
             window.addEventListener('resize', onWindowResize);
+        }
+
+        function loadAllModels() {
+            createSanta();
+            loadTreeModels();
+        }
+
+        function checkAllModelsLoaded() {
+            modelsLoaded++;
+            if (modelsLoaded >= totalModels) {
+                document.getElementById('loading').style.display = 'none';
+                console.log('✅ Всі моделі завантажені!');
+            }
+        }
+
+        function loadTreeModels() {
+            const loader = new THREE.GLTFLoader();
+            
+            loader.load('models/tree.glb',
+                function(gltf) {
+                    treeModelCache = gltf.scene;
+                    
+                    treeModelCache.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+                    
+                    // Створити кілька варіацій для різноманітності
+                    for (let i = 0; i < 3; i++) {
+                        const treeVariant = treeModelCache.clone();
+                        treeVariant.scale.setScalar(0.8 + Math.random() * 0.4);
+                        treeModels.push(treeVariant);
+                    }
+                    
+                    console.log('Моделі дерев завантажені!');
+                    checkAllModelsLoaded();
+                },
+                function(xhr) {
+                    const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
+                    document.getElementById('loading').innerHTML = `Завантаження: ${percent}%`;
+                },
+                function(error) {
+                    console.error('Помилка завантаження дерев:', error);
+                }
+            );
         }
 
         function setupLighting() {
@@ -461,26 +516,14 @@
                 const dashGeometry = new THREE.PlaneGeometry(0.1, dashLength);
                 const dash = new THREE.Mesh(dashGeometry, lineMaterial);
                 dash.rotation.x = -Math.PI / 2;
-                dash.position.set(0, -0.9, -500 + i * (dashLength + gapLength));
+                dash.position.set(0, -0.9, -250 + i * (dashLength + gapLength));
                 scene.add(dash);
             }
-
-            const sideLineGeometry = new THREE.PlaneGeometry(0.2, 1000);
-            
-            const leftLine = new THREE.Mesh(sideLineGeometry, lineMaterial);
-            leftLine.rotation.x = -Math.PI / 2;
-            leftLine.position.set(-LANE_WIDTH * 1.5, -0.9, 0);
-            scene.add(leftLine);
-
-            const rightLine = new THREE.Mesh(sideLineGeometry, lineMaterial);
-            rightLine.rotation.x = -Math.PI / 2;
-            rightLine.position.set(LANE_WIDTH * 1.5, -0.9, 0);
-            scene.add(rightLine);
         }
 
         function createSnowfall() {
             const snowGeometry = new THREE.BufferGeometry();
-            const snowCount = 2000;
+            const snowCount = 1000;
             const positions = [];
             const velocities = [];
             
@@ -514,53 +557,38 @@
         }
 
         function createInitialTrees() {
-            for (let i = 0; i < 10; i++) {
-                createMovingTree(-70 + i * 15);
+            for (let i = 0; i < 20; i++) {
+                createMovingTree(-60 + i * 12);
             }
         }
 
         function createMovingTree(zPos) {
+            if (treeModels.length === 0) {
+                console.warn('Моделі дерев не завантажені');
+                return;
+            }
+            
             const side = Math.random() > 0.5 ? 1 : -1;
             const xPos = side * (10 + Math.random() * 6);
-            const scale = 1.5 + Math.random() * 1.0;
+            const scale = 8 + Math.random() * 2;
             
-            const treeGroup = new THREE.Group();
+            // Вибираємо випадкову модель дерева
+            const treeModel = treeModels[Math.floor(Math.random() * treeModels.length)];
+            const treeInstance = treeModel.clone();
             
-            const trunkGeometry = new THREE.CylinderGeometry(0.5 * scale, 0.7 * scale, 3 * scale);
-            const trunkMaterial = new THREE.MeshPhongMaterial({ color: 0x8b4513 });
-            const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
-            trunk.position.y = 1.5 * scale;
-            trunk.castShadow = true;
-            treeGroup.add(trunk);
+            treeInstance.position.set(xPos, 0, zPos);
+            treeInstance.scale.setScalar(scale);
+            treeInstance.rotation.y = Math.random() * Math.PI;
             
-            const coneGeometry = new THREE.ConeGeometry(2.2 * scale, 4 * scale, 8);
-            const coneMaterial = new THREE.MeshPhongMaterial({ color: 0x228b22 });
-            const cone = new THREE.Mesh(coneGeometry, coneMaterial);
-            cone.position.y = 4 * scale;
-            cone.castShadow = true;
-            treeGroup.add(cone);
-            
-            const snowGeometry = new THREE.SphereGeometry(0.8 * scale, 8, 6);
-            const snowMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
-            const snow = new THREE.Mesh(snowGeometry, snowMaterial);
-            snow.position.set(0, 5 * scale, 0.3 * scale);
-            treeGroup.add(snow);
-            
-            const snowBottomGeometry = new THREE.SphereGeometry(0.6 * scale, 8, 6);
-            const snowBottom = new THREE.Mesh(snowBottomGeometry, snowMaterial);
-            snowBottom.position.set(0.2 * scale, 4.2 * scale, 0.2 * scale);
-            treeGroup.add(snowBottom);
-            
-            treeGroup.position.set(xPos, -1, zPos);
-            treeGroup.userData = { 
+            treeInstance.userData = { 
                 type: 'movingTree',
-                speed: gameSpeed * (0.8 + Math.random() * 0.4)
+                speed: gameSpeed * (0.7 + Math.random() * 0.3)
             };
             
-            backgroundTrees.push(treeGroup);
-            scene.add(treeGroup);
+            backgroundTrees.push(treeInstance);
+            scene.add(treeInstance);
             
-            return treeGroup;
+            return treeInstance;
         }
 
         function createSnowParticles() {
@@ -628,6 +656,11 @@
         function createSanta() {
             const loader = new THREE.FBXLoader();
             
+            if (window.santaModelCache) {
+                setupSantaModel(window.santaModelCache.clone());
+                return;
+            }
+            
             loader.load(
                 'models/santa.fbx',
                 function(object) {
@@ -656,7 +689,7 @@
                 },
                 function(xhr) {
                     const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
-                    document.getElementById('loading').innerHTML = `Завантаження моделі Санти: ${percent}`;
+                    document.getElementById('loading').innerHTML = `Завантаження: ${percent}%`;
                 },
                 function(error) {
                     console.error('❌ Помилка завантаження FBX:', error);
@@ -923,14 +956,14 @@
         function updateTrees() {
             treeSpawnTimer += gameSpeed;
             if (treeSpawnTimer > TREE_SPAWN_INTERVAL) {
-                createMovingTree(-70);
+                createMovingTree(-60);
                 treeSpawnTimer = 0;
             }
             
             backgroundTrees = backgroundTrees.filter(tree => {
                 tree.position.z += gameSpeed * tree.userData.speed;
                 
-                if (tree.position.z > 20) {
+                if (tree.position.z > 15) {
                     scene.remove(tree);
                     return false;
                 }
@@ -969,7 +1002,7 @@
             const deltaTime = clock.getDelta();
             
             if (santaMixer) {
-                santaMixer.update(deltaTime);
+                santaMixer.update(deltaTime * 0.8);
             }
             
             if (santa && santa.position.x !== targetLaneX) {
