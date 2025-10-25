@@ -196,7 +196,7 @@
     </style>
 </head>
 <body>
-    <div id="loading">Завантаження моделі Санти...</div>
+    <div id="loading">Завантаження гри...</div>
     
     <div class="game-container">
         <canvas id="gameCanvas"></canvas>
@@ -268,7 +268,8 @@
         let gameSpeed = 0.3;
         let soundEnabled = true;
         let backgroundTrees = [];
-        let santaMixer = null; // Додано міксер для анімації
+        let santaMixer = null;
+        let starEffects = []; // Масив для ефектів зірочок
 
         const LANE_WIDTH = 3;
         const lanes = [-LANE_WIDTH, 0, LANE_WIDTH];
@@ -280,16 +281,14 @@
         let jumpVelocity = 0;
         let slideTimer = 0;
 
-        // Змінні для плавного руху камери
         let cameraTargetX = 0;
         let cameraTargetY = 8;
         let cameraLerpFactor = 0.1;
         let cameraShake = 0;
         let cameraShakeIntensity = 0;
 
-        // Змінні для генерації дерев
         let treeSpawnTimer = 0;
-        const TREE_SPAWN_INTERVAL = 20; // Дистанція між деревами
+        const TREE_SPAWN_INTERVAL = 20;
         let lastTreeZ = -50;
 
         let clock = new THREE.Clock();
@@ -312,10 +311,15 @@
             camera.lookAt(0, 0, -10);
             
             const canvas = document.getElementById('gameCanvas');
-            renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer = new THREE.WebGLRenderer({ 
+                canvas, 
+                antialias: true,
+                alpha: true
+            });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputEncoding = THREE.sRGBEncoding;
             
             setupLighting();
             createWorld();
@@ -325,6 +329,8 @@
             updateBestScore();
             
             window.addEventListener('resize', onWindowResize);
+            
+            document.getElementById('loading').style.display = 'none';
         }
 
         function setupLighting() {
@@ -338,41 +344,210 @@
             directionalLight.shadow.camera.right = 20;
             directionalLight.shadow.camera.top = 20;
             directionalLight.shadow.camera.bottom = -20;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
             scene.add(directionalLight);
+            
+            const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+            fillLight.position.set(-10, 10, -10);
+            scene.add(fillLight);
         }
 
         function createWorld() {
             const skyGeometry = new THREE.SphereGeometry(500, 32, 32);
-            const skyMaterial = new THREE.MeshBasicMaterial({ color: colors.sky, side: THREE.BackSide });
+            const skyMaterial = new THREE.MeshBasicMaterial({ 
+                color: colors.sky, 
+                side: THREE.BackSide 
+            });
             const sky = new THREE.Mesh(skyGeometry, skyMaterial);
             scene.add(sky);
             
-            createGround();
+            createSnowyRoad();
             createInitialTrees();
             createSnowParticles();
+            createSnowfall();
         }
 
-        function createGround() {
-            const groundGeometry = new THREE.PlaneGeometry(20, 1000);
-            const groundMaterial = new THREE.MeshPhongMaterial({ color: colors.ground, side: THREE.DoubleSide });
-            ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        function createSnowyRoad() {
+            // Основа дороги (сніг)
+            const roadGeometry = new THREE.PlaneGeometry(20, 1000);
+            const roadMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xf0f8ff,
+                shininess: 30,
+                specular: 0x444444
+            });
+            
+            ground = new THREE.Mesh(roadGeometry, roadMaterial);
             ground.rotation.x = -Math.PI / 2;
             ground.position.y = -1;
             ground.receiveShadow = true;
             scene.add(ground);
-            
-            for (let i = -1; i <= 1; i += 2) {
-                const lineGeometry = new THREE.PlaneGeometry(0.1, 1000);
-                const lineMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-                const line = new THREE.Mesh(lineGeometry, lineMaterial);
-                line.rotation.x = -Math.PI / 2;
-                line.position.set(i * LANE_WIDTH / 2, -0.9, 0);
-                scene.add(line);
+
+            // Текстура снігу
+            createSnowTexture(roadMaterial);
+
+            // Сліди на дорозі
+            createTireTracks();
+
+            // Снігові бар'єри/обочини
+            createSnowBanks();
+
+            // Дорожня розмітка
+            createRoadMarkings();
+        }
+
+        function createSnowTexture(material) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const context = canvas.getContext('2d');
+
+            context.fillStyle = '#f0f8ff';
+            context.fillRect(0, 0, 512, 512);
+
+            context.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            for (let i = 0; i < 5000; i++) {
+                const x = Math.random() * 512;
+                const y = Math.random() * 512;
+                const size = Math.random() * 3 + 1;
+                context.beginPath();
+                context.arc(x, y, size, 0, Math.PI * 2);
+                context.fill();
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(8, 100);
+
+            material.map = texture;
+            material.needsUpdate = true;
+        }
+
+        function createTireTracks() {
+            const trackGeometry = new THREE.PlaneGeometry(1.5, 1000);
+            const trackMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xe8f4f8,
+                transparent: true,
+                opacity: 0.7
+            });
+
+            const leftTrack = new THREE.Mesh(trackGeometry, trackMaterial);
+            leftTrack.rotation.x = -Math.PI / 2;
+            leftTrack.position.set(-LANE_WIDTH, -0.95, 0);
+            scene.add(leftTrack);
+
+            const rightTrack = new THREE.Mesh(trackGeometry, trackMaterial);
+            rightTrack.rotation.x = -Math.PI / 2;
+            rightTrack.position.set(LANE_WIDTH, -0.95, 0);
+            scene.add(rightTrack);
+        }
+
+        function createSnowBanks() {
+            const bankGeometry = new THREE.BoxGeometry(5, 1, 1000);
+            const bankMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xffffff,
+                shininess: 50
+            });
+
+            const leftBank = new THREE.Mesh(bankGeometry, bankMaterial);
+            leftBank.position.set(-8, -0.5, 0);
+            leftBank.castShadow = true;
+            leftBank.receiveShadow = true;
+            scene.add(leftBank);
+
+            const rightBank = new THREE.Mesh(bankGeometry, bankMaterial);
+            rightBank.position.set(8, -0.5, 0);
+            rightBank.castShadow = true;
+            rightBank.receiveShadow = true;
+            scene.add(rightBank);
+
+            createSnowBalls(-8, 0.5, 100);
+            createSnowBalls(8, 0.5, 100);
+        }
+
+        function createSnowBalls(x, y, count) {
+            const snowBallGeometry = new THREE.SphereGeometry(0.3, 8, 6);
+            const snowBallMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xffffff 
+            });
+
+            for (let i = 0; i < count; i++) {
+                const snowBall = new THREE.Mesh(snowBallGeometry, snowBallMaterial);
+                snowBall.position.set(
+                    x + (Math.random() - 0.5) * 4,
+                    y + Math.random() * 0.5,
+                    Math.random() * 1000 - 500
+                );
+                snowBall.castShadow = true;
+                scene.add(snowBall);
             }
         }
 
+        function createRoadMarkings() {
+            const lineMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+            
+            const dashLength = 2;
+            const gapLength = 4;
+            const dashCount = 200;
+            
+            for (let i = 0; i < dashCount; i++) {
+                const dashGeometry = new THREE.PlaneGeometry(0.1, dashLength);
+                const dash = new THREE.Mesh(dashGeometry, lineMaterial);
+                dash.rotation.x = -Math.PI / 2;
+                dash.position.set(0, -0.9, -500 + i * (dashLength + gapLength));
+                scene.add(dash);
+            }
+
+            const sideLineGeometry = new THREE.PlaneGeometry(0.2, 1000);
+            
+            const leftLine = new THREE.Mesh(sideLineGeometry, lineMaterial);
+            leftLine.rotation.x = -Math.PI / 2;
+            leftLine.position.set(-LANE_WIDTH * 1.5, -0.9, 0);
+            scene.add(leftLine);
+
+            const rightLine = new THREE.Mesh(sideLineGeometry, lineMaterial);
+            rightLine.rotation.x = -Math.PI / 2;
+            rightLine.position.set(LANE_WIDTH * 1.5, -0.9, 0);
+            scene.add(rightLine);
+        }
+
+        function createSnowfall() {
+            const snowGeometry = new THREE.BufferGeometry();
+            const snowCount = 2000;
+            const positions = [];
+            const velocities = [];
+            
+            for (let i = 0; i < snowCount; i++) {
+                positions.push(
+                    Math.random() * 40 - 20,
+                    Math.random() * 20 + 10,
+                    Math.random() * 100 - 50
+                );
+                velocities.push(
+                    (Math.random() - 0.5) * 0.02,
+                    -Math.random() * 0.1 - 0.05,
+                    (Math.random() - 0.5) * 0.02
+                );
+            }
+            
+            snowGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            
+            const snowMaterial = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.1,
+                transparent: true,
+                opacity: 0.8,
+                sizeAttenuation: true
+            });
+            
+            const snowfall = new THREE.Points(snowGeometry, snowMaterial);
+            snowfall.userData.velocities = velocities;
+            scene.add(snowfall);
+            particles.push(snowfall);
+        }
+
         function createInitialTrees() {
-            // Створюємо початкові дерева на дорозі
             for (let i = 0; i < 10; i++) {
                 createMovingTree(-70 + i * 15);
             }
@@ -380,12 +555,11 @@
 
         function createMovingTree(zPos) {
             const side = Math.random() > 0.5 ? 1 : -1;
-            const xPos = side * (10 + Math.random() * 6); // Відсунули дерева далі від дороги
-            const scale = 1.5 + Math.random() * 1.0; // Збільшили розмір дерев
+            const xPos = side * (10 + Math.random() * 6);
+            const scale = 1.5 + Math.random() * 1.0;
             
             const treeGroup = new THREE.Group();
             
-            // Ствол (зробили товщішим і вищим)
             const trunkGeometry = new THREE.CylinderGeometry(0.5 * scale, 0.7 * scale, 3 * scale);
             const trunkMaterial = new THREE.MeshPhongMaterial({ color: 0x8b4513 });
             const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
@@ -393,7 +567,6 @@
             trunk.castShadow = true;
             treeGroup.add(trunk);
             
-            // Крона (зробили більшою)
             const coneGeometry = new THREE.ConeGeometry(2.2 * scale, 4 * scale, 8);
             const coneMaterial = new THREE.MeshPhongMaterial({ color: 0x228b22 });
             const cone = new THREE.Mesh(coneGeometry, coneMaterial);
@@ -401,14 +574,12 @@
             cone.castShadow = true;
             treeGroup.add(cone);
             
-            // Сніг на дереві (ЗМЕНШИЛИ розмір снігу)
-            const snowGeometry = new THREE.SphereGeometry(0.8 * scale, 8, 6); // Значно зменшили розмір
+            const snowGeometry = new THREE.SphereGeometry(0.8 * scale, 8, 6);
             const snowMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
             const snow = new THREE.Mesh(snowGeometry, snowMaterial);
-            snow.position.set(0, 5 * scale, 0.3 * scale); // Трохи змістили вперед
+            snow.position.set(0, 5 * scale, 0.3 * scale);
             treeGroup.add(snow);
             
-            // Додаємо ще один маленький шар снігу знизу
             const snowBottomGeometry = new THREE.SphereGeometry(0.6 * scale, 8, 6);
             const snowBottom = new THREE.Mesh(snowBottomGeometry, snowMaterial);
             snowBottom.position.set(0.2 * scale, 4.2 * scale, 0.2 * scale);
@@ -417,7 +588,7 @@
             treeGroup.position.set(xPos, -1, zPos);
             treeGroup.userData = { 
                 type: 'movingTree',
-                speed: gameSpeed * (0.8 + Math.random() * 0.4) // Різна швидкість для різноманітності
+                speed: gameSpeed * (0.8 + Math.random() * 0.4)
             };
             
             backgroundTrees.push(treeGroup);
@@ -452,19 +623,55 @@
             scene.add(snowParticles);
         }
 
+        // НОВА ФУНКЦІЯ: Створення ефекту зірочок при зборі подарунка
+        function createStarEffect(position) {
+            const starCount = 12;
+            const stars = new THREE.Group();
+            
+            for (let i = 0; i < starCount; i++) {
+                // Створюємо зірочку
+                const starGeometry = new THREE.SphereGeometry(0.2, 6, 6);
+                const starMaterial = new THREE.MeshBasicMaterial({ 
+                    color: new THREE.Color().setHSL(Math.random(), 1, 0.7),
+                    transparent: true,
+                    opacity: 1
+                });
+                
+                const star = new THREE.Mesh(starGeometry, starMaterial);
+                
+                // Випадковий напрямок руху
+                const angle = (i / starCount) * Math.PI * 2;
+                const speed = 0.1 + Math.random() * 0.1;
+                const radius = 0.5 + Math.random() * 0.5;
+                
+                star.userData = {
+                    velocity: new THREE.Vector3(
+                        Math.cos(angle) * speed,
+                        Math.sin(angle) * speed,
+                        (Math.random() - 0.5) * speed
+                    ),
+                    life: 30 + Math.floor(Math.random() * 20), // Час життя
+                    maxLife: 30 + Math.floor(Math.random() * 20)
+                };
+                
+                star.position.copy(position);
+                stars.add(star);
+            }
+            
+            scene.add(stars);
+            return stars;
+        }
+
         function createSanta() {
             const loader = new THREE.FBXLoader();
             
-            // Шлях до вашого FBX файлу з Mixamo
             loader.load(
                 'models/santa.fbx',
                 function(object) {
-                    // Mixamo моделі зазвичай великі, тому зменшуємо
                     object.scale.set(0.01, 0.01, 0.01);
                     object.position.set(0, 0, 5);
-                    object.rotation.y = Math.PI; // Поворот обличчям вперед
+                    object.rotation.y = Math.PI;
                     
-                    // Налаштування тіней
                     object.traverse((child) => {
                         if (child.isMesh) {
                             child.castShadow = true;
@@ -472,46 +679,71 @@
                         }
                     });
                     
-                    // Анімація
                     if (object.animations && object.animations.length > 0) {
                         santaMixer = new THREE.AnimationMixer(object);
                         const action = santaMixer.clipAction(object.animations[0]);
                         action.play();
-                        
-                        console.log('✅ Анімація запущена! Кількість анімацій:', object.animations.length);
-                    } else {
-                        console.log('⚠️ Анімації не знайдено');
                     }
                     
                     scene.add(object);
                     santa = object;
-                    
-                    document.getElementById('loading').style.display = 'none';
-                    console.log('✅ Модель Санти завантажена!');
                 },
                 function(xhr) {
                     const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
-                    document.getElementById('loading').innerHTML = `Завантаження: ${percent}%<br><small>Розмістіть файл santa.fbx в папці models/</small>`;
+                    document.getElementById('loading').innerHTML = `Завантаження: ${percent}%<br><small>Якщо модель не завантажиться, гра продовжиться без неї</small>`;
                 },
                 function(error) {
-                    console.error('❌ Помилка завантаження FBX:', error);
-                    document.getElementById('loading').innerHTML = '❌ Помилка завантаження моделі!<br><small>Перевірте: models/santa.fbx</small>';
-                    document.getElementById('loading').style.color = '#ff0000';
+                    console.error('Помилка завантаження FBX:', error);
+                    createFallbackSanta();
                 }
             );
         }
 
+        function createFallbackSanta() {
+            const santaGroup = new THREE.Group();
+            
+            const bodyGeometry = new THREE.CylinderGeometry(0.5, 0.5, 1.5);
+            const bodyMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.y = 0.75;
+            body.castShadow = true;
+            santaGroup.add(body);
+            
+            const headGeometry = new THREE.SphereGeometry(0.4);
+            const headMaterial = new THREE.MeshPhongMaterial({ color: 0xffcc99 });
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            head.position.y = 1.8;
+            head.castShadow = true;
+            santaGroup.add(head);
+            
+            const hatGeometry = new THREE.ConeGeometry(0.5, 1, 8);
+            const hatMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+            const hat = new THREE.Mesh(hatGeometry, hatMaterial);
+            hat.position.y = 2.3;
+            hat.rotation.x = Math.PI;
+            hat.castShadow = true;
+            santaGroup.add(hat);
+            
+            santaGroup.position.set(0, 0, 5);
+            scene.add(santaGroup);
+            santa = santaGroup;
+            
+            document.getElementById('loading').style.display = 'none';
+        }
+
         function setupTouchControls() {
             let touchStartX = 0, touchStartY = 0;
+            let touchProcessed = false;
             
             renderer.domElement.addEventListener('touchstart', (e) => {
                 touchStartX = e.touches[0].clientX;
                 touchStartY = e.touches[0].clientY;
+                touchProcessed = false;
                 e.preventDefault();
             }, { passive: false });
             
             renderer.domElement.addEventListener('touchmove', (e) => {
-                if (gameState !== 'playing') return;
+                if (gameState !== 'playing' || touchProcessed) return;
                 
                 const touchX = e.touches[0].clientX;
                 const touchY = e.touches[0].clientY;
@@ -521,14 +753,18 @@
                 
                 if (Math.abs(diffX) > minSwipeDistance && Math.abs(diffX) > Math.abs(diffY)) {
                     if (diffX > 0) moveRight(); else moveLeft();
-                    touchStartX = touchX;
+                    touchProcessed = true;
                 } else if (Math.abs(diffY) > minSwipeDistance && Math.abs(diffY) > Math.abs(diffX)) {
                     if (diffY < 0) jump(); else slide();
-                    touchStartY = touchY;
+                    touchProcessed = true;
                 }
                 
                 e.preventDefault();
             }, { passive: false });
+
+            renderer.domElement.addEventListener('touchend', () => {
+                touchProcessed = false;
+            });
         }
 
         function createObstacle(type, lane) {
@@ -694,8 +930,6 @@
             if (currentLane > 0 && !isJumping && santa) {
                 currentLane--;
                 targetLaneX = lanes[currentLane];
-                
-                // Додаємо тремтіння камери при русі
                 cameraShake = 5;
                 cameraShakeIntensity = 0.1;
             }
@@ -705,8 +939,6 @@
             if (currentLane < 2 && !isJumping && santa) {
                 currentLane++;
                 targetLaneX = lanes[currentLane];
-                
-                // Додаємо тремтіння камери при русі
                 cameraShake = 5;
                 cameraShakeIntensity = 0.1;
             }
@@ -716,8 +948,6 @@
             if (!isJumping && !isSliding && santa) {
                 isJumping = true;
                 jumpVelocity = 0.3;
-                
-                // Додаємо тремтіння камери при стрибку
                 cameraShake = 8;
                 cameraShakeIntensity = 0.15;
             }
@@ -757,9 +987,11 @@
             obstacles.forEach(obj => scene.remove(obj));
             gifts.forEach(obj => scene.remove(obj));
             backgroundTrees.forEach(obj => scene.remove(obj));
+            starEffects.forEach(obj => scene.remove(obj));
             obstacles = [];
             gifts = [];
             backgroundTrees = [];
+            starEffects = [];
             
             createInitialTrees();
             
@@ -772,40 +1004,67 @@
         function updateCamera() {
             if (gameState !== 'playing') return;
             
-            // Оновлюємо цільову позицію камери
-            cameraTargetX = santa.position.x * 0.5; // Камера слідує за Сантою, але не повністю
-            cameraTargetY = 8 + (santa.position.y * 0.3); // Камера трохи піднімається при стрибку
+            cameraTargetX = santa.position.x * 0.5;
+            cameraTargetY = 8 + (santa.position.y * 0.3);
             
-            // Плавна інтерполяція позиції камери
             camera.position.x += (cameraTargetX - camera.position.x) * cameraLerpFactor;
             camera.position.y += (cameraTargetY - camera.position.y) * cameraLerpFactor;
             
-            // Додаємо тремтіння камери
             if (cameraShake > 0) {
                 camera.position.x += (Math.random() - 0.5) * cameraShakeIntensity;
                 camera.position.y += (Math.random() - 0.5) * cameraShakeIntensity;
                 cameraShake--;
             }
             
-            // Камера завжди дивиться трохи попереду Санти
             camera.lookAt(santa.position.x * 0.3, santa.position.y * 0.5 + 2, santa.position.z - 10);
         }
 
         function updateTrees() {
-            // Генерація нових дерев
             treeSpawnTimer += gameSpeed;
             if (treeSpawnTimer > TREE_SPAWN_INTERVAL) {
                 createMovingTree(-70);
                 treeSpawnTimer = 0;
             }
             
-            // Оновлення існуючих дерев
             backgroundTrees = backgroundTrees.filter(tree => {
                 tree.position.z += gameSpeed * tree.userData.speed;
                 
-                // Якщо дерево пройшло повз гравця, видаляємо його
                 if (tree.position.z > 20) {
                     scene.remove(tree);
+                    return false;
+                }
+                
+                return true;
+            });
+        }
+
+        // НОВА ФУНКЦІЯ: Оновлення ефектів зірочок
+        function updateStarEffects() {
+            starEffects = starEffects.filter(effect => {
+                let allDead = true;
+                
+                effect.children.forEach(star => {
+                    if (star.userData.life > 0) {
+                        // Рухаємо зірочку
+                        star.position.add(star.userData.velocity);
+                        
+                        // Зменшуємо життя
+                        star.userData.life--;
+                        
+                        // Змінюємо прозорість
+                        star.material.opacity = star.userData.life / star.userData.maxLife;
+                        
+                        // Зменшуємо розмір
+                        const scale = 0.5 + 0.5 * (star.userData.life / star.userData.maxLife);
+                        star.scale.set(scale, scale, scale);
+                        
+                        allDead = false;
+                    }
+                });
+                
+                // Якщо всі зірочки "померли", видаляємо ефект
+                if (allDead) {
+                    scene.remove(effect);
                     return false;
                 }
                 
@@ -818,17 +1077,14 @@
             
             const deltaTime = clock.getDelta();
             
-            // Оновлюємо анімацію
             if (santaMixer) {
                 santaMixer.update(deltaTime);
             }
             
-            // Плавний рух по доріжках
             if (santa && santa.position.x !== targetLaneX) {
                 santa.position.x += (targetLaneX - santa.position.x) * 0.2;
             }
             
-            // Стрибок
             if (isJumping && santa) {
                 santa.position.y += jumpVelocity;
                 jumpVelocity -= 0.015;
@@ -840,7 +1096,6 @@
                 }
             }
             
-            // Слайд
             if (isSliding) {
                 slideTimer--;
                 if (slideTimer <= 0) {
@@ -848,18 +1103,14 @@
                 }
             }
             
-            // Оновлення камери
             updateCamera();
-            
-            // Оновлення дерев
             updateTrees();
             
             gameSpeed += 0.0001;
             
-            // Генерація об'єктів - видалено 'box' з типів перешкод
             if (Math.random() < 0.02) {
                 const lane = Math.floor(Math.random() * 3);
-                const types = ['snowman', 'tree', 'rock']; // Видалено 'box'
+                const types = ['snowman', 'tree', 'rock'];
                 const type = types[Math.floor(Math.random() * types.length)];
                 createObstacle(type, lane);
             }
@@ -869,7 +1120,6 @@
                 createGift(lane);
             }
             
-            // Оновлення перешкод (рухаються ДО гравця)
             obstacles = obstacles.filter(obstacle => {
                 obstacle.position.z += gameSpeed;
                 
@@ -883,7 +1133,6 @@
                         scene.remove(obstacle);
                         updateUI();
                         
-                        // Додаємо сильне тремтіння камери при зіткненні
                         cameraShake = 15;
                         cameraShakeIntensity = 0.3;
                         
@@ -902,7 +1151,6 @@
                 return true;
             });
             
-            // Оновлення подарунків
             gifts = gifts.filter(gift => {
                 gift.position.z += gameSpeed;
                 gift.rotation.y += 0.05;
@@ -911,10 +1159,14 @@
                 if (santa && !gift.userData.collected && checkCollision(santa, gift)) {
                     gift.userData.collected = true;
                     score += 10;
+                    
+                    // Додаємо ефект зірочок при зборі подарунка
+                    const starEffect = createStarEffect(gift.position.clone());
+                    starEffects.push(starEffect);
+                    
                     scene.remove(gift);
                     updateUI();
                     
-                    // Додаємо легке тремтіння камери при зборі подарунка
                     cameraShake = 3;
                     cameraShakeIntensity = 0.05;
                     return false;
@@ -928,13 +1180,14 @@
                 return true;
             });
             
-            // Оновлення частинок снігу
             particles.forEach(particleSystem => {
                 const positions = particleSystem.geometry.attributes.position.array;
                 const velocities = particleSystem.userData.velocities;
                 
                 for (let i = 0; i < positions.length; i += 3) {
-                    positions[i + 1] += velocities[Math.floor(i / 3) * 3 + 1];
+                    positions[i] += velocities[i] || 0;
+                    positions[i + 1] += velocities[i + 1] || 0;
+                    positions[i + 2] += velocities[i + 2] || 0;
                     
                     if (positions[i + 1] < -5) {
                         positions[i + 1] = 20;
@@ -945,6 +1198,9 @@
                 
                 particleSystem.geometry.attributes.position.needsUpdate = true;
             });
+            
+            // Оновлюємо ефекти зірочок
+            updateStarEffects();
             
             score += 0.1;
             updateUI();
@@ -1031,7 +1287,6 @@
             }
         }
 
-        // Запуск гри при завантаженні сторінки
         window.addEventListener('load', () => {
             init();
         });
