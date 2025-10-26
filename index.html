@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Святий Миколай: Зимова Пригода 3D</title>
-    <link rel="preload" href="models/santa.fbx" as="fetch" crossorigin>
-    <link rel="preload" href="models/tree.glb" as="fetch" crossorigin>
     <style>
         * {
             margin: 0;
@@ -281,7 +279,12 @@
         let treeModelCache = null;
         let treeModels = [];
         let modelsLoaded = 0;
-        let totalModels = 2; 
+
+        let houseModelCache = null;
+        let houseModels = [];
+        let backgroundHouses = [];
+
+        let totalModels = 3; 
 
         let isJumping = false;
         let jumpVelocity = 0;
@@ -293,8 +296,11 @@
         let cameraShakeIntensity = 0;
 
         let treeSpawnTimer = 0;
-        const TREE_SPAWN_INTERVAL = 20;
+        const TREE_SPAWN_INTERVAL = 15;
         let lastTreeZ = -50;
+
+        let houseSpawnTimer = 0;
+        const HOUSE_SPAWN_INTERVAL = 50;
 
         let clock = new THREE.Clock();
 
@@ -339,6 +345,7 @@
         function loadAllModels() {
             createSanta();
             loadTreeModels();
+            loadHouseModels();
         }
 
         function checkAllModelsLoaded() {
@@ -363,7 +370,6 @@
                         }
                     });
                     
-                    // Створити кілька варіацій для різноманітності
                     for (let i = 0; i < 3; i++) {
                         const treeVariant = treeModelCache.clone();
                         treeVariant.scale.setScalar(0.8 + Math.random() * 0.4);
@@ -379,6 +385,40 @@
                 },
                 function(error) {
                     console.error('Помилка завантаження дерев:', error);
+                }
+            );
+        }
+
+        function loadHouseModels() {
+            const loader = new THREE.GLTFLoader();
+        
+            loader.load('models/house.glb',
+                function(gltf) {
+                    houseModelCache = gltf.scene;
+                
+                    houseModelCache.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+                
+                    for (let i = 0; i < 2; i++) {
+                        const houseVariant = houseModelCache.clone();
+                        houseVariant.scale.setScalar(0.8 + Math.random() * 0.4);
+                        houseModels.push(houseVariant);
+                    }
+                
+                    console.log('Моделі будинків завантажені!');
+                    checkAllModelsLoaded();
+                },
+                function(xhr) {
+                    const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
+                    document.getElementById('loading').innerHTML = `Завантаження: ${percent}%`;
+                },
+                function(error) {
+                    console.error('Помилка завантаження будинків:', error);
+                    checkAllModelsLoaded();
                 }
             );
         }
@@ -414,6 +454,7 @@
             
             createSnowyRoad();
             createInitialTrees();
+            createInitialHouses();
             createSnowParticles();
             createSnowfall();
         }
@@ -564,15 +605,42 @@
 
         function createMovingTree(zPos) {
             if (treeModels.length === 0) {
-                console.warn('Моделі дерев не завантажені');
                 return;
             }
             
             const side = Math.random() > 0.5 ? 1 : -1;
-            const xPos = side * (10 + Math.random() * 6);
-            const scale = 8 + Math.random() * 2;
+            const xPos = side * (12 + Math.random() * 4);
+            const scale = 6 + Math.random() * 2;
             
-            // Вибираємо випадкову модель дерева
+            const MIN_TREE_DISTANCE = 5; // Мінімальна відстань між деревами
+            
+            // Перевірка відстані до будинків
+            const tooCloseToHouse = backgroundHouses.some(house => {
+                const distance = Math.abs(house.position.z - zPos);
+                const sameSide = Math.sign(house.userData.xPos) === side;
+                return distance < 15 && sameSide;
+            });
+            
+            if (tooCloseToHouse) {
+                return;
+            }
+            
+            // Перевірка відстані до інших дерев
+            const tooCloseToTree = backgroundTrees.some(tree => {
+                const distance = Math.abs(tree.position.z - zPos);
+                const sameSide = Math.sign(tree.userData.xPos) === side;
+                // Перевірити як на тій самій стороні, так і на протилежній
+                if (sameSide) {
+                    return distance < MIN_TREE_DISTANCE; // Більша відстань на тій самій стороні
+                } else {
+                    return distance < 12; // Менша відстань на протилежних сторонах
+                }
+            });
+            
+            if (tooCloseToTree) {
+                return; // Не створювати дерево, якщо занадто близько до іншого
+            }
+            
             const treeModel = treeModels[Math.floor(Math.random() * treeModels.length)];
             const treeInstance = treeModel.clone();
             
@@ -582,13 +650,77 @@
             
             treeInstance.userData = { 
                 type: 'movingTree',
-                speed: gameSpeed * (0.7 + Math.random() * 0.3)
+                speed: gameSpeed * (0.7 + Math.random() * 0.3),
+                xPos: xPos
             };
             
             backgroundTrees.push(treeInstance);
             scene.add(treeInstance);
             
             return treeInstance;
+        }
+
+        function createMovingHouse(zPos) {
+            if (houseModels.length === 0) {
+                return;
+            }
+        
+            const side = Math.random() > 0.5 ? 1 : -1;
+            const xPos = side * (11 + Math.random() * 4);
+            const scale = 0.25 + Math.random() * 0.1;
+            
+            const MIN_HOUSE_DISTANCE = 10; // Мінімальна відстань між будинками
+        
+            // Перевірка відстані до дерев
+            const tooCloseToTree = backgroundTrees.some(tree => {
+                const distance = Math.abs(tree.position.z - zPos);
+                const sameSide = Math.sign(tree.userData.xPos) === side;
+                return distance < 15 && sameSide;
+            });
+            
+            if (tooCloseToTree) {
+                return;
+            }
+            
+            // Перевірка відстані до інших будинків
+            const tooCloseToHouse = backgroundHouses.some(house => {
+                const distance = Math.abs(house.position.z - zPos);
+                const sameSide = Math.sign(house.userData.xPos) === side;
+                // Перевірити як на тій самій стороні, так і на протилежній
+                if (sameSide) {
+                    return distance < MIN_HOUSE_DISTANCE; // Більша відстань на тій самій стороні
+                } else {
+                    return distance < 20; // Менша відстань на протилежних сторонах
+                }
+            });
+            
+            if (tooCloseToHouse) {
+                return; // Не створювати будинок, якщо занадто близько до іншого
+            }
+        
+            const houseModel = houseModels[Math.floor(Math.random() * houseModels.length)];
+            const houseInstance = houseModel.clone();
+        
+            houseInstance.position.set(xPos, -0.5, zPos);
+            houseInstance.scale.setScalar(scale);
+            houseInstance.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+        
+            houseInstance.userData = { 
+                type: 'movingHouse',
+                speed: gameSpeed * (0.6 + Math.random() * 0.2),
+                xPos: xPos
+            };
+        
+            backgroundHouses.push(houseInstance);
+            scene.add(houseInstance);
+        
+            return houseInstance;
+        }
+
+        function createInitialHouses() {
+            for (let i = 0; i < 10; i++) {
+                createMovingHouse(-80 + i * 25);
+            }
         }
 
         function createSnowParticles() {
@@ -633,7 +765,6 @@
                 
                 const angle = (i / starCount) * Math.PI * 2;
                 const speed = 0.1 + Math.random() * 0.1;
-                const radius = 0.5 + Math.random() * 0.5;
                 
                 star.userData = {
                     velocity: new THREE.Vector3(
@@ -655,11 +786,6 @@
 
         function createSanta() {
             const loader = new THREE.FBXLoader();
-            
-            if (window.santaModelCache) {
-                setupSantaModel(window.santaModelCache.clone());
-                return;
-            }
             
             loader.load(
                 'models/santa.fbx',
@@ -683,16 +809,15 @@
                     
                     scene.add(object);
                     santa = object;
-                    
-                    document.getElementById('loading').style.display = 'none';
-                    console.log('✅ Модель Санти завантажена!');
+                    checkAllModelsLoaded();
                 },
                 function(xhr) {
                     const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
                     document.getElementById('loading').innerHTML = `Завантаження: ${percent}%`;
                 },
                 function(error) {
-                    console.error('❌ Помилка завантаження FBX:', error);
+                    console.error('Помилка завантаження Santa:', error);
+                    checkAllModelsLoaded();
                 }
             );
         }
@@ -921,13 +1046,16 @@
             obstacles.forEach(obj => scene.remove(obj));
             gifts.forEach(obj => scene.remove(obj));
             backgroundTrees.forEach(obj => scene.remove(obj));
+            backgroundHouses.forEach(obj => scene.remove(obj));
             starEffects.forEach(obj => scene.remove(obj));
             obstacles = [];
             gifts = [];
             backgroundTrees = [];
+            backgroundHouses = [];
             starEffects = [];
             
             createInitialTrees();
+            createInitialHouses();
             
             document.getElementById('startMenu').classList.add('hidden');
             
@@ -953,21 +1081,39 @@
             camera.lookAt(santa.position.x * 0.3, santa.position.y * 0.5 + 2, santa.position.z - 10);
         }
 
-        function updateTrees() {
+        function updateBackgroundObjects() {
             treeSpawnTimer += gameSpeed;
+            houseSpawnTimer += gameSpeed;
+        
             if (treeSpawnTimer > TREE_SPAWN_INTERVAL) {
                 createMovingTree(-60);
                 treeSpawnTimer = 0;
             }
-            
+        
+            if (houseSpawnTimer > HOUSE_SPAWN_INTERVAL) {
+                createMovingHouse(-60);
+                houseSpawnTimer = 0;
+            }
+        
             backgroundTrees = backgroundTrees.filter(tree => {
                 tree.position.z += gameSpeed * tree.userData.speed;
-                
+            
                 if (tree.position.z > 15) {
                     scene.remove(tree);
                     return false;
                 }
-                
+            
+                return true;
+            });
+        
+            backgroundHouses = backgroundHouses.filter(house => {
+                house.position.z += gameSpeed * house.userData.speed;
+            
+                if (house.position.z > 15) {
+                    scene.remove(house);
+                    return false;
+                }
+            
                 return true;
             });
         }
@@ -1021,7 +1167,7 @@
             }
             
             updateCamera();
-            updateTrees();
+            updateBackgroundObjects();
             
             gameSpeed += 0.0001;
             
