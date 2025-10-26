@@ -527,23 +527,43 @@
         }
 
         function createSnowBanks() {
-            const bankGeometry = new THREE.BoxGeometry(5, 1, 1000);
+            // Розширені снігові бруствери
+            const bankGeometry = new THREE.BoxGeometry(8, 1.5, 1000); // Збільшена ширина та висота
             const bankMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0xffffff,
                 shininess: 50
             });
 
             const leftBank = new THREE.Mesh(bankGeometry, bankMaterial);
-            leftBank.position.set(-8, -0.5, 0);
+            leftBank.position.set(-12, -0.25, 0); // Зміщено далі від дороги
             leftBank.castShadow = true;
             leftBank.receiveShadow = true;
             scene.add(leftBank);
 
             const rightBank = new THREE.Mesh(bankGeometry, bankMaterial);
-            rightBank.position.set(8, -0.5, 0);
+            rightBank.position.set(12, -0.25, 0); // Зміщено далі від дороги
             rightBank.castShadow = true;
             rightBank.receiveShadow = true;
             scene.add(rightBank);
+
+            // Додаткові снігові насипи ще далі
+            const farBankGeometry = new THREE.BoxGeometry(6, 0.8, 1000);
+            const farBankMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xf8f8f8,
+                shininess: 40
+            });
+
+            const leftFarBank = new THREE.Mesh(farBankGeometry, farBankMaterial);
+            leftFarBank.position.set(-18, -0.1, 0);
+            leftFarBank.castShadow = true;
+            leftFarBank.receiveShadow = true;
+            scene.add(leftFarBank);
+
+            const rightFarBank = new THREE.Mesh(farBankGeometry, farBankMaterial);
+            rightFarBank.position.set(18, -0.1, 0);
+            rightFarBank.castShadow = true;
+            rightFarBank.receiveShadow = true;
+            scene.add(rightFarBank);
         }
 
         function createRoadMarkings() {
@@ -564,13 +584,13 @@
 
         function createSnowfall() {
             const snowGeometry = new THREE.BufferGeometry();
-            const snowCount = 1000;
+            const snowCount = 1500; // Збільшена кількість сніжинок
             const positions = [];
             const velocities = [];
             
             for (let i = 0; i < snowCount; i++) {
                 positions.push(
-                    Math.random() * 40 - 20,
+                    Math.random() * 60 - 30, // Розширена область снігопаду
                     Math.random() * 20 + 10,
                     Math.random() * 100 - 50
                 );
@@ -598,7 +618,7 @@
         }
 
         function createInitialTrees() {
-            for (let i = 0; i < 20; i++) {
+            for (let i = 0; i < 25; i++) {
                 createMovingTree(-60 + i * 12);
             }
         }
@@ -609,16 +629,16 @@
             }
             
             const side = Math.random() > 0.5 ? 1 : -1;
-            const xPos = side * (12 + Math.random() * 4);
+            const xPos = side * (12 + Math.random() * 4); // Дерева далі від дороги
             const scale = 6 + Math.random() * 2;
             
-            const MIN_TREE_DISTANCE = 5; // Мінімальна відстань між деревами
+            const MIN_TREE_DISTANCE = 5; // Збільшена мінімальна відстань
             
             // Перевірка відстані до будинків
             const tooCloseToHouse = backgroundHouses.some(house => {
                 const distance = Math.abs(house.position.z - zPos);
                 const sameSide = Math.sign(house.userData.xPos) === side;
-                return distance < 15 && sameSide;
+                return distance < 15 && sameSide; // Збільшена мінімальна відстань
             });
             
             if (tooCloseToHouse) {
@@ -629,16 +649,15 @@
             const tooCloseToTree = backgroundTrees.some(tree => {
                 const distance = Math.abs(tree.position.z - zPos);
                 const sameSide = Math.sign(tree.userData.xPos) === side;
-                // Перевірити як на тій самій стороні, так і на протилежній
                 if (sameSide) {
-                    return distance < MIN_TREE_DISTANCE; // Більша відстань на тій самій стороні
+                    return distance < MIN_TREE_DISTANCE;
                 } else {
-                    return distance < 12; // Менша відстань на протилежних сторонах
+                    return distance < 15; // Збільшена відстань на протилежних сторонах
                 }
             });
             
             if (tooCloseToTree) {
-                return; // Не створювати дерево, якщо занадто близько до іншого
+                return;
             }
             
             const treeModel = treeModels[Math.floor(Math.random() * treeModels.length)];
@@ -666,10 +685,10 @@
             }
         
             const side = Math.random() > 0.5 ? 1 : -1;
-            const xPos = side * (11 + Math.random() * 4);
+            const xPos = side * (14 + Math.random() * 3);
             const scale = 0.25 + Math.random() * 0.1;
             
-            const MIN_HOUSE_DISTANCE = 10; // Мінімальна відстань між будинками
+            const MIN_HOUSE_DISTANCE = 10;
         
             // Перевірка відстані до дерев
             const tooCloseToTree = backgroundTrees.some(tree => {
@@ -686,16 +705,15 @@
             const tooCloseToHouse = backgroundHouses.some(house => {
                 const distance = Math.abs(house.position.z - zPos);
                 const sameSide = Math.sign(house.userData.xPos) === side;
-                // Перевірити як на тій самій стороні, так і на протилежній
                 if (sameSide) {
-                    return distance < MIN_HOUSE_DISTANCE; // Більша відстань на тій самій стороні
+                    return distance < MIN_HOUSE_DISTANCE;
                 } else {
-                    return distance < 20; // Менша відстань на протилежних сторонах
+                    return distance < 20;
                 }
             });
             
             if (tooCloseToHouse) {
-                return; // Не створювати будинок, якщо занадто близько до іншого
+                return;
             }
         
             const houseModel = houseModels[Math.floor(Math.random() * houseModels.length)];
@@ -718,19 +736,23 @@
         }
 
         function createInitialHouses() {
-            for (let i = 0; i < 10; i++) {
-                createMovingHouse(-80 + i * 25);
+            for (let i = 0; i < 12; i++) { // Збільшена кількість будинків
+                createMovingHouse(-80 + i * 22);
             }
         }
 
         function createSnowParticles() {
-            const particleCount = 1000;
+            const particleCount = 1500; // Збільшена кількість частинок
             const geometry = new THREE.BufferGeometry();
             const positions = [];
             const velocities = [];
             
             for (let i = 0; i < particleCount; i++) {
-                positions.push(Math.random() * 40 - 20, Math.random() * 20, Math.random() * 100 - 50);
+                positions.push(
+                    Math.random() * 60 - 30, // Розширена область
+                    Math.random() * 20, 
+                    Math.random() * 100 - 50
+                );
                 velocities.push(0, -Math.random() * 0.1 - 0.05, 0);
             }
             
@@ -1251,7 +1273,7 @@
                     
                     if (positions[i + 1] < -5) {
                         positions[i + 1] = 20;
-                        positions[i] = Math.random() * 40 - 20;
+                        positions[i] = Math.random() * 60 - 30; // Оновлено для розширеної області
                         positions[i + 2] = Math.random() * 100 - 50;
                     }
                 }
