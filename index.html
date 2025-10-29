@@ -157,8 +157,96 @@
             margin-bottom: 10px;
         }
 
+        .photo-container {
+            background: linear-gradient(135deg, #0057B7 0%, #FFD700 100%);
+            padding: 20px;
+            border-radius: 20px;
+            margin: 20px 0;
+            text-align: center;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3), 
+                        0 0 0 3px rgba(255, 255, 255, 0.5),
+                        inset 0 2px 4px rgba(255, 255, 255, 0.3);
+            display: inline-block;
+            position: relative;
+            overflow: hidden;
+            animation: logoGlow 3s ease-in-out infinite;
+        }
+
+        @keyframes logoGlow {
+            0%, 100% { 
+                box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3), 
+                            0 0 0 3px rgba(255, 255, 255, 0.5),
+                            inset 0 2px 4px rgba(255, 255, 255, 0.3),
+                            0 0 20px rgba(0, 87, 183, 0.3); 
+            }
+            50% { 
+                box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3), 
+                            0 0 0 3px rgba(255, 255, 255, 0.7),
+                            inset 0 2px 4px rgba(255, 255, 255, 0.5),
+                            0 0 30px rgba(255, 215, 0, 0.5); 
+            }
+        }
+
+        .photo-container::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, 
+                transparent 30%, 
+                rgba(255, 255, 255, 0.2) 50%, 
+                transparent 70%);
+            animation: shimmer 4s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+            100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
+        }
+
+        .profile-photo {
+            width: 200px;
+            height: auto;
+            object-fit: contain;
+            display: block;
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+            position: relative;
+            z-index: 1;
+            transition: transform 0.3s ease;
+        }
+
+        .photo-container:hover .profile-photo {
+            transform: scale(1.05);
+        }
+
         .hidden {
             display: none !important;
+        }
+
+        .photo-container.small {
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 15px;
+            animation: none;
+        }
+
+        .photo-container.small::before {
+            display: none;
+        }
+
+        .photo-container.small .profile-photo {
+            width: 120px;
+            height: auto;
+        }
+
+        .logo-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            pointer-events: none;
+            z-index: 10;
         }
 
         #loading {
@@ -186,11 +274,69 @@
             }
             
             .menu {
-                padding: 20px;
+                padding: 25px 20px;
             }
             
             .menu h1 {
                 font-size: 24px;
+                margin-bottom: 15px;
+            }
+
+            .photo-container {
+                padding: 15px;
+                margin: 15px 0;
+            }
+
+            .profile-photo {
+                width: 160px;
+            }
+
+            .photo-container.small .profile-photo {
+                width: 100px;
+            }
+
+            .menu-btn {
+                padding: 12px 25px;
+                font-size: 18px;
+                margin: 8px;
+            }
+
+            .best-score, .final-score {
+                padding: 12px;
+                font-size: 18px;
+                margin: 15px 0;
+            }
+
+            .controls-info {
+                padding: 12px;
+                margin-top: 15px;
+            }
+
+            .controls-info h3 {
+                font-size: 18px;
+            }
+
+            .logo-container {
+                top: 10px;
+                right: 10px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .menu {
+                padding: 20px 15px;
+            }
+
+            .menu h1 {
+                font-size: 22px;
+            }
+
+            .profile-photo {
+                width: 140px;
+            }
+
+            .photo-container.small .profile-photo {
+                width: 90px;
             }
         }
     </style>
@@ -221,7 +367,11 @@
         </div>
         
         <div id="startMenu" class="menu">
-            <h1>🎅 Святий Миколай: Зимова Пригода 3D 🎄</h1>
+            <div class="photo-container">
+                <img src="textures/logo.PNG" alt="logo" class="profile-photo">
+            </div>
+
+            <h1>🎅Зимова Пригода🎄</h1>
             <p>Збирай подарунки та уникай перешкод!</p>
             <button id="startBtn" class="menu-btn">🎮 Грати</button>
             <div class="best-score">
@@ -230,12 +380,15 @@
             </div>
             <div class="controls-info">
                 <h3>Керування:</h3>
-                <p>📱 Мобільний: Свайп вліво/вправо</p>
-                <p>⬆️ Стрибок: Пробіл або свайп вгору</p>
+                <p>Свайп вліво/вправо/вгору</p>
             </div>
         </div>
         
         <div id="pauseMenu" class="menu hidden">
+            <div class="photo-container small">
+                <img src="textures/logo.PNG" alt="logo" class="profile-photo">
+            </div>
+
             <h2>⏸️ Пауза</h2>
             <button id="resumeBtn" class="menu-btn">▶️ Продовжити</button>
             <button id="restartBtn" class="menu-btn">🔄 Почати знову</button>
@@ -243,6 +396,9 @@
         </div>
         
         <div id="gameOverMenu" class="menu hidden">
+            <div class="photo-container small">
+                <img src="textures/logo.PNG" alt="logo" class="profile-photo">
+            </div>
             <h2>🎮 Гру завершено!</h2>
             <div class="final-score">
                 <p>Ваш рахунок: <span id="finalScore">0</span></p>
