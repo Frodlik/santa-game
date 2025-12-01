@@ -271,6 +271,24 @@
             background: rgba(0, 0, 0, 0.7);
             padding: 20px;
             border-radius: 10px;
+            width: 300px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #2196f3, #4CAF50);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 10px;
         }
 
         @media (max-width: 768px) {
@@ -352,6 +370,7 @@
     </style>
 </head>
 <body>
+    <!-- Аудіо елементи залишаються для завантаження -->
     <audio id="backgroundMusic" loop>
         <source src="sounds/background.mp3" type="audio/mpeg">
     </audio>
@@ -365,7 +384,13 @@
         <source src="sounds/collision.mp3" type="audio/mpeg">
     </audio>
     
-    <div id="loading">Завантаження гри...</div>
+    <div id="loading">
+        <div>Завантаження гри...</div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div id="progressText">0%</div>
+    </div>
     
     <div class="game-container">
         <canvas id="gameCanvas"></canvas>
@@ -460,13 +485,9 @@
 
         let treeModelCache = null;
         let treeModels = [];
-        let modelsLoaded = 0;
-
         let houseModelCache = null;
         let houseModels = [];
         let backgroundHouses = [];
-
-        let totalModels = 3;
 
         let isJumping = false;
         let jumpVelocity = 0;
@@ -495,7 +516,53 @@
             snow: 0xffffff
         };
 
+        class AssetLoader {
+            constructor() {
+                this.totalAssets = 4;
+                this.loadedAssets = 0;
+                this.errors = 0;
+            }
+
+            updateProgress() {
+                const percentage = Math.floor((this.loadedAssets / this.totalAssets) * 100);
+                document.getElementById('progressFill').style.width = percentage + '%';
+                document.getElementById('progressText').textContent = percentage + '%';
+                
+                console.log(`Завантажено ${this.loadedAssets}/${this.totalAssets} (${percentage}%)`);
+                
+                if (this.loadedAssets + this.errors >= this.totalAssets) {
+                    this.finishLoading();
+                }
+            }
+
+            finishLoading() {
+                setTimeout(() => {
+                    document.getElementById('loading').style.display = 'none';
+                    const startBtn = document.getElementById('startBtn');
+                    startBtn.disabled = false;
+                    startBtn.textContent = '🎮 Грати';
+                    startBtn.style.cursor = 'pointer';
+                    console.log('Всі ассети завантажені! Гра готова!');
+                }, 500);
+            }
+
+            assetLoaded() {
+                this.loadedAssets++;
+                this.updateProgress();
+            }
+
+            assetError() {
+                this.errors++;
+                this.updateProgress();
+            }
+        }
+
+        let assetLoader;
+
         function init() {
+            // Ініціалізація завантажувача
+            assetLoader = new AssetLoader();
+            
             scene = new THREE.Scene();
             scene.fog = new THREE.Fog(colors.sky, 10, 100);
             
@@ -514,7 +581,7 @@
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.outputEncoding = THREE.sRGBEncoding;
             
-            // Ініціалізація аудіо
+            // Ініціалізація та завантаження аудіо
             initAudio();
             
             setupLighting();
@@ -528,6 +595,7 @@
         }
 
         function initAudio() {
+            // Отримуємо аудіо елементи
             backgroundMusic = document.getElementById('backgroundMusic');
             collectSound = document.getElementById('collectSound');
             jumpSound = document.getElementById('jumpSound');
@@ -540,24 +608,21 @@
             collisionSound.volume = 0.7;
             
             // Перевіряємо завантаження аудіо
-            let audioLoaded = 0;
             const audioElements = [backgroundMusic, collectSound, jumpSound, collisionSound];
+            let audioLoadedCount = 0;
             
             audioElements.forEach(audio => {
                 audio.addEventListener('canplaythrough', () => {
-                    audioLoaded++;
-                    if (audioLoaded === audioElements.length) {
+                    audioLoadedCount++;
+                    if (audioLoadedCount === audioElements.length) {
                         console.log('Всі аудіофайли завантажені!');
-                        checkAllModelsLoaded();
                     }
+                    assetLoader.assetLoaded();
                 });
                 
                 audio.addEventListener('error', () => {
                     console.log('Помилка завантаження аудіофайлу');
-                    audioLoaded++;
-                    if (audioLoaded === audioElements.length) {
-                        checkAllModelsLoaded();
-                    }
+                    assetLoader.assetError();
                 });
             });
             
@@ -571,25 +636,26 @@
         }
 
         function loadAllModels() {
+            // Завантажуємо логотип
+            preloadImage('textures/logo.PNG', 'logo');
+            
+            // Завантажуємо моделі
             createSanta();
             loadTreeModels();
             loadHouseModels();
         }
 
-        function checkAllModelsLoaded() {
-            modelsLoaded++;
-            console.log(`Завантажено моделей: ${modelsLoaded}/${totalModels}`);
-            
-            if (modelsLoaded >= totalModels) {
-                document.getElementById('loading').style.display = 'none';
-                // Активуємо кнопку "Грати"
-                const startBtn = document.getElementById('startBtn');
-                startBtn.disabled = false;
-                startBtn.textContent = '🎮 Грати';
-                startBtn.style.cursor = 'pointer';
-                
-                console.log('Всі моделі та аудіо завантажені! Гра готова!');
-            }
+        function preloadImage(src, type) {
+            const img = new Image();
+            img.onload = () => {
+                console.log(`${type} зображення завантажено`);
+                assetLoader.assetLoaded();
+            };
+            img.onerror = () => {
+                console.error(`Помилка завантаження ${type} зображення`);
+                assetLoader.assetError();
+            };
+            img.src = src;
         }
 
         function loadTreeModels() {
@@ -606,6 +672,7 @@
                         }
                     });
                     
+                    // Створюємо 3 варіанти дерев
                     for (let i = 0; i < 3; i++) {
                         const treeVariant = treeModelCache.clone();
                         treeVariant.scale.setScalar(0.8 + Math.random() * 0.4);
@@ -613,15 +680,16 @@
                     }
                     
                     console.log('Моделі дерев завантажені!');
-                    checkAllModelsLoaded();
+                    assetLoader.assetLoaded();
                 },
                 function(xhr) {
+                    // Прогрес для конкретної моделі
                     const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
-                    document.getElementById('loading').innerHTML = `Завантаження: ${percent}%`;
+                    console.log(`Завантаження дерев: ${percent}%`);
                 },
                 function(error) {
                     console.error('Помилка завантаження дерев:', error);
-                    checkAllModelsLoaded();
+                    assetLoader.assetError();
                 }
             );
         }
@@ -640,6 +708,7 @@
                         }
                     });
                 
+                    // Створюємо 2 варіанти будинків
                     for (let i = 0; i < 2; i++) {
                         const houseVariant = houseModelCache.clone();
                         houseVariant.scale.setScalar(0.8 + Math.random() * 0.4);
@@ -647,15 +716,76 @@
                     }
                 
                     console.log('Моделі будинків завантажені!');
-                    checkAllModelsLoaded();
+                    assetLoader.assetLoaded();
                 },
                 function(xhr) {
                     const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
-                    document.getElementById('loading').innerHTML = `Завантаження: ${percent}%`;
+                    console.log(`Завантаження будинків: ${percent}%`);
                 },
                 function(error) {
                     console.error('Помилка завантаження будинків:', error);
-                    checkAllModelsLoaded();
+                    assetLoader.assetError();
+                }
+            );
+        }
+
+        function createSanta() {
+            const loader = new THREE.FBXLoader();
+            
+            loader.load('models/santa.fbx',
+            function(object) {
+                object.scale.set(2, 2, 2);
+                object.position.set(0, 0, 5);
+                object.rotation.y = Math.PI;
+
+                object.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+
+                        // ВАЖЛИВО для анімації
+                        child.frustumCulled = false;
+
+                        if (child.material) {
+                            // Для коректної анімації
+                            child.material.skinning = true;
+
+                            // Зменшуємо блиск
+                            if (child.material.metalness !== undefined) {
+                                child.material.metalness = 0.1;
+                                child.material.roughness = 0.8;
+                            }
+                            if (child.material.shininess !== undefined) {
+                                child.material.shininess = 10;
+                            }
+                            if (child.material.specular) {
+                                child.material.specular.set(0x111111);
+                            }
+
+                            child.material.needsUpdate = true;
+                        }
+                    }
+                });
+
+                if (object.animations && object.animations.length > 0) {
+                    santaMixer = new THREE.AnimationMixer(object);
+                    const action = santaMixer.clipAction(object.animations[0]);
+                    action.play();
+                    console.log('Анімацію запущено. Кількість анімацій:', object.animations.length);
+                }
+
+                scene.add(object);
+                santa = object;
+                console.log('Модель Санти завантажена!');
+                assetLoader.assetLoaded();
+            },
+                function(xhr) {
+                    const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
+                    console.log(`Завантаження Санти: ${percent}%`);
+                },
+                function(error) {
+                    console.error('Помилка завантаження Santa:', error);
+                    assetLoader.assetError();
                 }
             );
         }
@@ -1035,44 +1165,6 @@
             
             scene.add(stars);
             return stars;
-        }
-
-        function createSanta() {
-            const loader = new THREE.FBXLoader();
-            
-            loader.load(
-                'models/santa.fbx',
-                function(object) {
-                    object.scale.set(2, 2, 2);
-                    object.position.set(0, 0, 5);
-                    object.rotation.y = Math.PI;
-                    
-                    object.traverse((child) => {
-                        if (child.isMesh) {
-                            child.castShadow = true;
-                            child.receiveShadow = true;
-                        }
-                    });
-                    
-                    if (object.animations && object.animations.length > 0) {
-                        santaMixer = new THREE.AnimationMixer(object);
-                        const action = santaMixer.clipAction(object.animations[0]);
-                        action.play();
-                    }
-                    
-                    scene.add(object);
-                    santa = object;
-                    checkAllModelsLoaded();
-                },
-                function(xhr) {
-                    const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
-                    document.getElementById('loading').innerHTML = `Завантаження: ${percent}%`;
-                },
-                function(error) {
-                    console.error('Помилка завантаження Santa:', error);
-                    checkAllModelsLoaded();
-                }
-            );
         }
 
         function setupTouchControls() {
