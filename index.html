@@ -370,7 +370,7 @@
     </style>
 </head>
 <body>
-    <!-- Аудіо елементи залишаються для завантаження -->
+    <!-- Аудіо елементи -->
     <audio id="backgroundMusic" loop>
         <source src="sounds/background.mp3" type="audio/mpeg">
     </audio>
@@ -382,6 +382,9 @@
     </audio>
     <audio id="collisionSound">
         <source src="sounds/collision.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="gameOverSound">
+        <source src="sounds/game_over.m4a" type="audio/mpeg">
     </audio>
     
     <div id="loading">
@@ -476,7 +479,7 @@
         let starEffects = [];
 
         // Аудіо елементи
-        let backgroundMusic, collectSound, jumpSound, collisionSound;
+        let backgroundMusic, collectSound, jumpSound, collisionSound, gameOverSound;
 
         const LANE_WIDTH = 3;
         const lanes = [-LANE_WIDTH, 0, LANE_WIDTH];
@@ -518,7 +521,7 @@
 
         class AssetLoader {
             constructor() {
-                this.totalAssets = 4;
+                this.totalAssets = 4; // Santa + Tree + House + logo + 5 аудіофайлів
                 this.loadedAssets = 0;
                 this.errors = 0;
             }
@@ -600,15 +603,17 @@
             collectSound = document.getElementById('collectSound');
             jumpSound = document.getElementById('jumpSound');
             collisionSound = document.getElementById('collisionSound');
+            gameOverSound = document.getElementById('gameOverSound');
             
             // Налаштування гучності
             backgroundMusic.volume = 0.5;
             collectSound.volume = 0.7;
             jumpSound.volume = 0.5;
             collisionSound.volume = 0.7;
+            gameOverSound.volume = 0.6;
             
             // Перевіряємо завантаження аудіо
-            const audioElements = [backgroundMusic, collectSound, jumpSound, collisionSound];
+            const audioElements = [backgroundMusic, collectSound, jumpSound, collisionSound, gameOverSound];
             let audioLoadedCount = 0;
             
             audioElements.forEach(audio => {
@@ -1668,6 +1673,16 @@
             
             // Зупиняємо музику
             backgroundMusic.pause();
+            
+            // Відтворюємо звук програшу
+            if (soundEnabled && gameOverSound) {
+                try {
+                    gameOverSound.currentTime = 0;
+                    gameOverSound.play().catch(e => console.log("Помилка відтворення звуку програшу: ", e));
+                } catch (error) {
+                    console.log("Не вдалося відтворити звук програшу:", error);
+                }
+            }
             
             document.getElementById('finalScore').textContent = Math.floor(score);
             document.getElementById('finalBestScore').textContent = bestScore;
