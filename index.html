@@ -63,6 +63,8 @@
 
         .heart {
             transition: all 0.3s;
+            color: #2196f3 !important;
+            text-shadow: 0 0 5px rgba(33, 150, 243, 0.3);
         }
 
         .pause-btn, .sound-btn {
@@ -99,7 +101,7 @@
         }
 
         .menu h1 {
-            color: #d32f2f;
+            color: #1976d2 !important;
             font-size: 32px;
             margin-bottom: 20px;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
@@ -130,7 +132,15 @@
             transition: all 0.3s;
         }
 
-        .menu-btn:hover {
+        .menu-btn:disabled {
+            background: linear-gradient(to bottom, #cccccc, #aaaaaa);
+            color: #888;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .menu-btn:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
         }
@@ -342,6 +352,19 @@
     </style>
 </head>
 <body>
+    <audio id="backgroundMusic" loop>
+        <source src="sounds/background.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="collectSound">
+        <source src="sounds/collect.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="jumpSound">
+        <source src="sounds/jump.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="collisionSound">
+        <source src="sounds/collision.mp3" type="audio/mpeg">
+    </audio>
+    
     <div id="loading">Завантаження гри...</div>
     
     <div class="game-container">
@@ -356,9 +379,9 @@
             <div class="lives-container">
                 <span class="lives-label">Життя:</span>
                 <div id="hearts">
-                    <span class="heart">❤️</span>
-                    <span class="heart">❤️</span>
-                    <span class="heart">❤️</span>
+                    <span class="heart">💙</span>
+                    <span class="heart">💙</span>
+                    <span class="heart">💙</span>
                 </div>
             </div>
             
@@ -373,7 +396,7 @@
 
             <h1>🎅Зимова Пригода🎄</h1>
             <p>Збирай подарунки та уникай перешкод!</p>
-            <button id="startBtn" class="menu-btn">🎮 Грати</button>
+            <button id="startBtn" class="menu-btn" disabled>🎮 Завантаження...</button>
             <div class="best-score">
                 <span>Найкращий результат:</span>
                 <span id="bestScore">0</span>
@@ -427,6 +450,9 @@
         let santaMixer = null;
         let starEffects = [];
 
+        // Аудіо елементи
+        let backgroundMusic, collectSound, jumpSound, collisionSound;
+
         const LANE_WIDTH = 3;
         const lanes = [-LANE_WIDTH, 0, LANE_WIDTH];
         let currentLane = 1;
@@ -440,7 +466,7 @@
         let houseModels = [];
         let backgroundHouses = [];
 
-        let totalModels = 3; 
+        let totalModels = 3;
 
         let isJumping = false;
         let jumpVelocity = 0;
@@ -488,6 +514,9 @@
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.outputEncoding = THREE.sRGBEncoding;
             
+            // Ініціалізація аудіо
+            initAudio();
+            
             setupLighting();
             createWorld();
             loadAllModels();
@@ -498,6 +527,49 @@
             window.addEventListener('resize', onWindowResize);
         }
 
+        function initAudio() {
+            backgroundMusic = document.getElementById('backgroundMusic');
+            collectSound = document.getElementById('collectSound');
+            jumpSound = document.getElementById('jumpSound');
+            collisionSound = document.getElementById('collisionSound');
+            
+            // Налаштування гучності
+            backgroundMusic.volume = 0.5;
+            collectSound.volume = 0.7;
+            jumpSound.volume = 0.5;
+            collisionSound.volume = 0.7;
+            
+            // Перевіряємо завантаження аудіо
+            let audioLoaded = 0;
+            const audioElements = [backgroundMusic, collectSound, jumpSound, collisionSound];
+            
+            audioElements.forEach(audio => {
+                audio.addEventListener('canplaythrough', () => {
+                    audioLoaded++;
+                    if (audioLoaded === audioElements.length) {
+                        console.log('Всі аудіофайли завантажені!');
+                        checkAllModelsLoaded();
+                    }
+                });
+                
+                audio.addEventListener('error', () => {
+                    console.log('Помилка завантаження аудіофайлу');
+                    audioLoaded++;
+                    if (audioLoaded === audioElements.length) {
+                        checkAllModelsLoaded();
+                    }
+                });
+            });
+            
+            // Автовідтворення при взаємодії
+            document.addEventListener('click', function initAudioOnce() {
+                if (soundEnabled) {
+                    backgroundMusic.play().catch(e => console.log("Автовідтворення заблоковано"));
+                }
+                document.removeEventListener('click', initAudioOnce);
+            });
+        }
+
         function loadAllModels() {
             createSanta();
             loadTreeModels();
@@ -506,9 +578,17 @@
 
         function checkAllModelsLoaded() {
             modelsLoaded++;
+            console.log(`Завантажено моделей: ${modelsLoaded}/${totalModels}`);
+            
             if (modelsLoaded >= totalModels) {
                 document.getElementById('loading').style.display = 'none';
-                console.log('✅ Всі моделі завантажені!');
+                // Активуємо кнопку "Грати"
+                const startBtn = document.getElementById('startBtn');
+                startBtn.disabled = false;
+                startBtn.textContent = '🎮 Грати';
+                startBtn.style.cursor = 'pointer';
+                
+                console.log('Всі моделі та аудіо завантажені! Гра готова!');
             }
         }
 
@@ -541,6 +621,7 @@
                 },
                 function(error) {
                     console.error('Помилка завантаження дерев:', error);
+                    checkAllModelsLoaded();
                 }
             );
         }
@@ -683,26 +764,24 @@
         }
 
         function createSnowBanks() {
-            // Розширені снігові бруствери
-            const bankGeometry = new THREE.BoxGeometry(8, 1.5, 1000); // Збільшена ширина та висота
+            const bankGeometry = new THREE.BoxGeometry(8, 1.5, 1000);
             const bankMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0xffffff,
                 shininess: 50
             });
 
             const leftBank = new THREE.Mesh(bankGeometry, bankMaterial);
-            leftBank.position.set(-12, -0.25, 0); // Зміщено далі від дороги
+            leftBank.position.set(-12, -0.25, 0);
             leftBank.castShadow = true;
             leftBank.receiveShadow = true;
             scene.add(leftBank);
 
             const rightBank = new THREE.Mesh(bankGeometry, bankMaterial);
-            rightBank.position.set(12, -0.25, 0); // Зміщено далі від дороги
+            rightBank.position.set(12, -0.25, 0);
             rightBank.castShadow = true;
             rightBank.receiveShadow = true;
             scene.add(rightBank);
 
-            // Додаткові снігові насипи ще далі
             const farBankGeometry = new THREE.BoxGeometry(6, 0.8, 1000);
             const farBankMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0xf8f8f8,
@@ -740,13 +819,13 @@
 
         function createSnowfall() {
             const snowGeometry = new THREE.BufferGeometry();
-            const snowCount = 1500; // Збільшена кількість сніжинок
+            const snowCount = 1500;
             const positions = [];
             const velocities = [];
             
             for (let i = 0; i < snowCount; i++) {
                 positions.push(
-                    Math.random() * 60 - 30, // Розширена область снігопаду
+                    Math.random() * 60 - 30,
                     Math.random() * 20 + 10,
                     Math.random() * 100 - 50
                 );
@@ -785,30 +864,28 @@
             }
             
             const side = Math.random() > 0.5 ? 1 : -1;
-            const xPos = side * (12 + Math.random() * 4); // Дерева далі від дороги
+            const xPos = side * (12 + Math.random() * 4);
             const scale = 6 + Math.random() * 2;
             
-            const MIN_TREE_DISTANCE = 5; // Збільшена мінімальна відстань
+            const MIN_TREE_DISTANCE = 5;
             
-            // Перевірка відстані до будинків
             const tooCloseToHouse = backgroundHouses.some(house => {
                 const distance = Math.abs(house.position.z - zPos);
                 const sameSide = Math.sign(house.userData.xPos) === side;
-                return distance < 15 && sameSide; // Збільшена мінімальна відстань
+                return distance < 15 && sameSide;
             });
             
             if (tooCloseToHouse) {
                 return;
             }
             
-            // Перевірка відстані до інших дерев
             const tooCloseToTree = backgroundTrees.some(tree => {
                 const distance = Math.abs(tree.position.z - zPos);
                 const sameSide = Math.sign(tree.userData.xPos) === side;
                 if (sameSide) {
                     return distance < MIN_TREE_DISTANCE;
                 } else {
-                    return distance < 15; // Збільшена відстань на протилежних сторонах
+                    return distance < 15;
                 }
             });
             
@@ -846,7 +923,6 @@
             
             const MIN_HOUSE_DISTANCE = 10;
         
-            // Перевірка відстані до дерев
             const tooCloseToTree = backgroundTrees.some(tree => {
                 const distance = Math.abs(tree.position.z - zPos);
                 const sameSide = Math.sign(tree.userData.xPos) === side;
@@ -857,7 +933,6 @@
                 return;
             }
             
-            // Перевірка відстані до інших будинків
             const tooCloseToHouse = backgroundHouses.some(house => {
                 const distance = Math.abs(house.position.z - zPos);
                 const sameSide = Math.sign(house.userData.xPos) === side;
@@ -892,20 +967,20 @@
         }
 
         function createInitialHouses() {
-            for (let i = 0; i < 12; i++) { // Збільшена кількість будинків
+            for (let i = 0; i < 12; i++) {
                 createMovingHouse(-80 + i * 22);
             }
         }
 
         function createSnowParticles() {
-            const particleCount = 1500; // Збільшена кількість частинок
+            const particleCount = 1500;
             const geometry = new THREE.BufferGeometry();
             const positions = [];
             const velocities = [];
             
             for (let i = 0; i < particleCount; i++) {
                 positions.push(
-                    Math.random() * 60 - 30, // Розширена область
+                    Math.random() * 60 - 30,
                     Math.random() * 20, 
                     Math.random() * 100 - 50
                 );
@@ -1205,10 +1280,18 @@
                 jumpVelocity = 0.3;
                 cameraShake = 8;
                 cameraShakeIntensity = 0.15;
+                
+                // Відтворюємо звук стрибка
+                if (soundEnabled) {
+                    jumpSound.currentTime = 0;
+                    jumpSound.play().catch(e => console.log("Помилка відтворення звуку стрибка"));
+                }
             }
         }
 
         function startGame() {
+            if (document.getElementById('startBtn').disabled) return;
+            
             gameState = 'playing';
             score = 0;
             lives = 3;
@@ -1236,6 +1319,12 @@
             createInitialHouses();
             
             document.getElementById('startMenu').classList.add('hidden');
+            
+            // Запускаємо музику
+            if (soundEnabled) {
+                backgroundMusic.currentTime = 0;
+                backgroundMusic.play().catch(e => console.log("Автовідтворення заблоковано"));
+            }
             
             updateUI();
             animate();
@@ -1375,6 +1464,12 @@
                         cameraShake = 15;
                         cameraShakeIntensity = 0.3;
                         
+                        // Відтворюємо звук зіткнення
+                        if (soundEnabled) {
+                            collisionSound.currentTime = 0;
+                            collisionSound.play().catch(e => console.log("Помилка відтворення звуку зіткнення"));
+                        }
+                        
                         if (lives <= 0) {
                             gameOver();
                         }
@@ -1398,6 +1493,12 @@
                 if (santa && !gift.userData.collected && checkCollision(santa, gift)) {
                     gift.userData.collected = true;
                     score += 10;
+                    
+                    // Відтворюємо звук збору подарунка
+                    if (soundEnabled) {
+                        collectSound.currentTime = 0;
+                        collectSound.play().catch(e => console.log("Помилка відтворення звуку збору"));
+                    }
                     
                     const starEffect = createStarEffect(gift.position.clone());
                     starEffects.push(starEffect);
@@ -1429,7 +1530,7 @@
                     
                     if (positions[i + 1] < -5) {
                         positions[i + 1] = 20;
-                        positions[i] = Math.random() * 60 - 30; // Оновлено для розширеної області
+                        positions[i] = Math.random() * 60 - 30;
                         positions[i + 2] = Math.random() * 100 - 50;
                     }
                 }
@@ -1454,11 +1555,14 @@
             
             const hearts = document.querySelectorAll('.heart');
             hearts.forEach((heart, index) => {
-                heart.style.opacity = index < lives ? '1' : '0.3';
                 if (index < lives) {
-                    heart.style.transform = 'scale(1)';
+                    heart.style.opacity = '1';
+                    heart.style.transform = 'scale(1.2)';
+                    heart.style.textShadow = '0 0 10px rgba(33, 150, 243, 0.8)';
                 } else {
+                    heart.style.opacity = '0.3';
                     heart.style.transform = 'scale(0.8)';
+                    heart.style.textShadow = 'none';
                 }
             });
         }
@@ -1470,6 +1574,9 @@
                 bestScore = Math.floor(score);
             }
             
+            // Зупиняємо музику
+            backgroundMusic.pause();
+            
             document.getElementById('finalScore').textContent = Math.floor(score);
             document.getElementById('finalBestScore').textContent = bestScore;
             document.getElementById('gameOverMenu').classList.remove('hidden');
@@ -1479,16 +1586,22 @@
             if (gameState === 'playing') {
                 gameState = 'paused';
                 document.getElementById('pauseMenu').classList.remove('hidden');
+                backgroundMusic.pause();
             }
         }
 
         function resumeGame() {
             gameState = 'playing';
             document.getElementById('pauseMenu').classList.add('hidden');
+            // Продовжуємо музику
+            if (soundEnabled) {
+                backgroundMusic.play().catch(e => console.log("Не вдалося відтворити музику"));
+            }
             animate();
         }
 
         function restartGame() {
+            gameState = 'playing';
             document.getElementById('pauseMenu').classList.add('hidden');
             document.getElementById('gameOverMenu').classList.add('hidden');
             startGame();
@@ -1499,11 +1612,23 @@
             document.getElementById('pauseMenu').classList.add('hidden');
             document.getElementById('gameOverMenu').classList.add('hidden');
             document.getElementById('startMenu').classList.remove('hidden');
+            
+            // Зупиняємо музику
+            backgroundMusic.pause();
         }
 
         function toggleSound() {
             soundEnabled = !soundEnabled;
-            document.getElementById('soundBtn').textContent = soundEnabled ? '🔊' : '🔇';
+            const soundBtn = document.getElementById('soundBtn');
+            soundBtn.textContent = soundEnabled ? '🔊' : '🔇';
+            
+            if (soundEnabled) {
+                if (gameState === 'playing') {
+                    backgroundMusic.play().catch(e => console.log("Не вдалося відтворити музику"));
+                }
+            } else {
+                backgroundMusic.pause();
+            }
         }
 
         function updateBestScore() {
