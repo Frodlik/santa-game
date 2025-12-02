@@ -384,7 +384,7 @@
         <source src="sounds/collision.mp3" type="audio/mpeg">
     </audio>
     <audio id="gameOverSound" preload="auto">
-        <source src="sounds/game_over.mp3" type="audio/mpeg">
+        <source src="sounds/game_over.m4a" type="audio/mpeg">
     </audio>
     
     <div id="loading">
@@ -466,15 +466,6 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 
     <script>
-        // Глобальний кеш моделей
-        const modelCache = {
-            santa: null,
-            tree: null,
-            house: null,
-            textures: {},
-            audio: {}
-        };
-
         let scene, camera, renderer;
         let santa, ground, obstacles = [], gifts = [], particles = [];
         let gameState = 'menu';
@@ -483,7 +474,6 @@
         let bestScore = 0;
         let gameSpeed = 0.3;
         let soundEnabled = true;
-        let audioUnlocked = false;
         let backgroundTrees = [];
         let santaMixer = null;
         let starEffects = [];
@@ -497,7 +487,9 @@
         let currentLane = 1;
         let targetLaneX = 0;
 
+        let treeModelCache = null;
         let treeModels = [];
+        let houseModelCache = null;
         let houseModels = [];
         let backgroundHouses = [];
 
@@ -530,18 +522,15 @@
 
         class AssetLoader {
             constructor() {
-                this.totalAssets = 8; // Santa + Tree + House + logo + 5 аудіофайлів
+                this.totalAssets = 4; // Santa + Tree + House + logo
                 this.loadedAssets = 0;
                 this.errors = 0;
-                this.preloadedAssets = new Set();
             }
 
             updateProgress() {
                 const percentage = Math.floor((this.loadedAssets / this.totalAssets) * 100);
                 document.getElementById('progressFill').style.width = percentage + '%';
                 document.getElementById('progressText').textContent = percentage + '%';
-                
-                console.log(`Завантажено ${this.loadedAssets}/${this.totalAssets} (${percentage}%)`);
                 
                 if (this.loadedAssets + this.errors >= this.totalAssets) {
                     this.finishLoading();
@@ -557,14 +546,8 @@
                     startBtn.style.cursor = 'pointer';
                     assetsLoaded = true;
                     
-                    // Оновлюємо найкращий результат після завантаження
-                    updateBestScore();
-                    
                     console.log('Всі ассети завантажені! Гра готова!');
-                    
-                    // Продовжуємо попереднє завантаження інших ассетів у фоновому режимі
-                    this.preloadAdditionalAssets();
-                }, 500);
+                }, 100);
             }
 
             assetLoaded() {
@@ -576,77 +559,20 @@
                 this.errors++;
                 this.updateProgress();
             }
-
-            preloadAdditionalAssets() {
-                // Додаткові ассети для передзавантаження
-                const additionalAssets = [
-                    'models/tree.glb',
-                    'models/house.glb',
-                    'models/santa.fbx',
-                    'textures/logo.PNG'
-                ];
-
-                additionalAssets.forEach(asset => {
-                    if (asset.endsWith('.png') || asset.endsWith('.jpg') || asset.endsWith('.jpeg')) {
-                        this.preloadImage(asset);
-                    } else if (asset.endsWith('.glb') || asset.endsWith('.fbx')) {
-                        this.preloadModel(asset);
-                    }
-                });
-            }
-
-            preloadImage(src) {
-                if (this.preloadedAssets.has(src)) return;
-                
-                const img = new Image();
-                img.onload = () => {
-                    console.log(`Передзавантажено зображення: ${src}`);
-                    this.preloadedAssets.add(src);
-                };
-                img.onerror = () => {
-                    console.error(`Помилка передзавантаження зображення: ${src}`);
-                };
-                img.src = src;
-            }
-
-            preloadModel(src) {
-                if (this.preloadedAssets.has(src)) return;
-                
-                console.log(`Починаємо передзавантаження моделі: ${src}`);
-                this.preloadedAssets.add(src);
-                
-                // Просто завантажуємо модель для кешування, але не додаємо до сцени
-                if (src.endsWith('.glb')) {
-                    const loader = new THREE.GLTFLoader();
-                    loader.load(src,
-                        () => {
-                            console.log(`Передзавантажено GLB модель: ${src}`);
-                        },
-                        undefined,
-                        (error) => {
-                            console.error(`Помилка передзавантаження GLB моделі ${src}:`, error);
-                        }
-                    );
-                } else if (src.endsWith('.fbx')) {
-                    const loader = new THREE.FBXLoader();
-                    loader.load(src,
-                        () => {
-                            console.log(`Передзавантажено FBX модель: ${src}`);
-                        },
-                        undefined,
-                        (error) => {
-                            console.error(`Помилка передзавантаження FBX моделі ${src}:`, error);
-                        }
-                    );
-                }
-            }
         }
 
         let assetLoader;
 
         function init() {
-            // Завантажуємо найкращий результат з localStorage перш за все
-            loadBestScore();
+            // Завантажуємо найкращий результат з localStorage
+            try {
+                const savedScore = localStorage.getItem('bestScore');
+                if (savedScore) {
+                    bestScore = parseInt(savedScore);
+                }
+            } catch (error) {
+                console.log('Не вдалося завантажити найкращий результат:', error);
+            }
             
             // Ініціалізація завантажувача
             assetLoader = new AssetLoader();
@@ -662,8 +588,7 @@
             renderer = new THREE.WebGLRenderer({ 
                 canvas, 
                 antialias: true,
-                alpha: true,
-                powerPreference: "high-performance"
+                alpha: true
             });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
@@ -681,67 +606,8 @@
             
             window.addEventListener('resize', onWindowResize);
             
-            // Попереднє завантаження текстур для дороги
-            preloadRoadTextures();
-        }
-
-        function preloadRoadTextures() {
-            // Створюємо текстури для дороги заздалегідь
-            createSnowTextureForCache();
-        }
-
-        function createSnowTextureForCache() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 512;
-            canvas.height = 512;
-            const context = canvas.getContext('2d');
-
-            context.fillStyle = '#f0f8ff';
-            context.fillRect(0, 0, 512, 512);
-
-            context.fillStyle = 'rgba(255, 255, 255, 0.8)';
-            for (let i = 0; i < 5000; i++) {
-                const x = Math.random() * 512;
-                const y = Math.random() * 512;
-                const size = Math.random() * 3 + 1;
-                context.beginPath();
-                context.arc(x, y, size, 0, Math.PI * 2);
-                context.fill();
-            }
-
-            const texture = new THREE.CanvasTexture(canvas);
-            texture.wrapS = THREE.RepeatWrapping;
-            texture.wrapT = THREE.RepeatWrapping;
-            texture.repeat.set(8, 100);
-            
-            modelCache.textures.road = texture;
-        }
-
-        function loadBestScore() {
-            try {
-                const savedScore = localStorage.getItem('bestScore');
-                if (savedScore) {
-                    bestScore = parseInt(savedScore);
-                    console.log('Завантажено найкращий результат з localStorage:', bestScore);
-                }
-            } catch (error) {
-                console.log('Не вдалося завантажити найкращий результат:', error);
-            }
-            updateBestScoreDisplay();
-        }
-
-        function saveBestScore() {
-            try {
-                localStorage.setItem('bestScore', bestScore);
-                console.log('Збережено найкращий результат:', bestScore);
-            } catch (error) {
-                console.log('Не вдалося зберегти найкращий результат:', error);
-            }
-        }
-
-        function updateBestScoreDisplay() {
-            document.getElementById('bestScore').textContent = bestScore;
-            document.getElementById('finalBestScore').textContent = bestScore;
+            // ВІДРАЗУ ЗАПУСКАЄМО АНІМАЦІЮ
+            animate();
         }
 
         function initAudio() {
@@ -759,118 +625,13 @@
             collisionSound.volume = 0.7;
             gameOverSound.volume = 0.6;
             
-            // Налаштування для iOS
-            backgroundMusic.preload = 'auto';
-            collectSound.preload = 'auto';
-            jumpSound.preload = 'auto';
-            collisionSound.preload = 'auto';
-            gameOverSound.preload = 'auto';
-            
-            // Автоматичне розблокування аудіо на iOS
-            setupIOSAudioUnlock();
-            
-            // Перевіряємо завантаження аудіо
-            const audioElements = [backgroundMusic, collectSound, jumpSound, collisionSound, gameOverSound];
-            let audioLoadedCount = 0;
-            
-            audioElements.forEach(audio => {
-                // Спробуємо завантажити аудіо
-                const handleLoad = () => {
-                    audioLoadedCount++;
-                    console.log(`Аудіо ${audio.id} завантажено`);
-                    if (audioLoadedCount === audioElements.length) {
-                        console.log('Всі аудіофайли завантажені!');
-                    }
-                    assetLoader.assetLoaded();
-                };
-                
-                // Спробуємо різні події
-                audio.addEventListener('canplaythrough', handleLoad);
-                audio.addEventListener('loadeddata', handleLoad);
-                
-                // Якщо аудіо вже завантажено
-                if (audio.readyState >= 3) {
-                    handleLoad();
+            // Автовідтворення при взаємодії
+            document.addEventListener('click', function initAudioOnce() {
+                if (soundEnabled) {
+                    backgroundMusic.play().catch(e => console.log("Автовідтворення заблоковано"));
                 }
-                
-                audio.addEventListener('error', (e) => {
-                    console.error(`Помилка завантаження аудіофайлу ${audio.id}:`, e);
-                    assetLoader.assetError();
-                });
+                document.removeEventListener('click', initAudioOnce);
             });
-        }
-
-        function setupIOSAudioUnlock() {
-            // Функція для розблокування аудіо на iOS
-            function unlockIOSAudio() {
-                if (audioUnlocked) return;
-                
-                try {
-                    // Створюємо беззвучний AudioContext для активації аудіо
-                    const AudioContext = window.AudioContext || window.webkitAudioContext;
-                    if (AudioContext) {
-                        const audioContext = new AudioContext();
-                        
-                        // Створюємо беззвучний буфер
-                        const buffer = audioContext.createBuffer(1, 1, 22050);
-                        const source = audioContext.createBufferSource();
-                        source.buffer = buffer;
-                        source.connect(audioContext.destination);
-                        
-                        // Запускаємо та зупиняємо негайно
-                        source.start();
-                        source.stop();
-                        
-                        // Зупиняємо контекст
-                        audioContext.close();
-                        
-                        audioUnlocked = true;
-                        console.log('Аудіо розблоковано для iOS');
-                    }
-                } catch (error) {
-                    console.log('Помилка розблокування аудіо:', error);
-                }
-            }
-            
-            // Автоматичне розблокування при першій взаємодії
-            const unlockOnInteraction = () => {
-                if (!audioUnlocked) {
-                    unlockIOSAudio();
-                }
-            };
-            
-            // Додаємо обробники для розблокування
-            document.addEventListener('click', unlockOnInteraction, { once: true });
-            document.addEventListener('touchstart', unlockOnInteraction, { once: true });
-            document.addEventListener('keydown', unlockOnInteraction, { once: true });
-            
-            // Також розблоковуємо при кліку на будь-яку кнопку гри
-            const allButtons = document.querySelectorAll('button');
-            allButtons.forEach(btn => {
-                btn.addEventListener('click', unlockOnInteraction);
-            });
-        }
-
-        function playSound(soundElement) {
-            if (!soundEnabled || !audioUnlocked) return;
-            
-            try {
-                soundElement.currentTime = 0;
-                soundElement.play().catch(e => {
-                    // Пробуємо розблокувати аудіо при помилці
-                    if (!audioUnlocked) {
-                        const AudioContext = window.AudioContext || window.webkitAudioContext;
-                        if (AudioContext) {
-                            new AudioContext().resume();
-                            audioUnlocked = true;
-                            // Повторюємо спробу
-                            soundElement.play().catch(() => {});
-                        }
-                    }
-                });
-            } catch (error) {
-                console.log('Помилка відтворення звуку:', error);
-            }
         }
 
         function loadAllModels() {
@@ -897,19 +658,13 @@
         }
 
         function loadTreeModels() {
-            // Перевіряємо кеш
-            if (modelCache.tree && treeModels.length > 0) {
-                assetLoader.assetLoaded();
-                return;
-            }
-            
             const loader = new THREE.GLTFLoader();
             
             loader.load('models/tree.glb',
                 function(gltf) {
-                    modelCache.tree = gltf.scene;
+                    treeModelCache = gltf.scene;
                     
-                    modelCache.tree.traverse((child) => {
+                    treeModelCache.traverse((child) => {
                         if (child.isMesh) {
                             child.castShadow = true;
                             child.receiveShadow = true;
@@ -918,12 +673,12 @@
                     
                     // Створюємо 3 варіанти дерев
                     for (let i = 0; i < 3; i++) {
-                        const treeVariant = modelCache.tree.clone();
+                        const treeVariant = treeModelCache.clone();
                         treeVariant.scale.setScalar(0.8 + Math.random() * 0.4);
                         treeModels.push(treeVariant);
                     }
                     
-                    console.log('Моделі дерев завантажені та закешовані!');
+                    console.log('Моделі дерев завантажені!');
                     assetLoader.assetLoaded();
                 },
                 function(xhr) {
@@ -939,19 +694,13 @@
         }
 
         function loadHouseModels() {
-            // Перевіряємо кеш
-            if (modelCache.house && houseModels.length > 0) {
-                assetLoader.assetLoaded();
-                return;
-            }
-        
             const loader = new THREE.GLTFLoader();
         
             loader.load('models/house.glb',
                 function(gltf) {
-                    modelCache.house = gltf.scene;
+                    houseModelCache = gltf.scene;
                 
-                    modelCache.house.traverse((child) => {
+                    houseModelCache.traverse((child) => {
                         if (child.isMesh) {
                             child.castShadow = true;
                             child.receiveShadow = true;
@@ -960,12 +709,12 @@
                 
                     // Створюємо 2 варіанти будинків
                     for (let i = 0; i < 2; i++) {
-                        const houseVariant = modelCache.house.clone();
+                        const houseVariant = houseModelCache.clone();
                         houseVariant.scale.setScalar(0.8 + Math.random() * 0.4);
                         houseModels.push(houseVariant);
                     }
                 
-                    console.log('Моделі будинків завантажені та закешовані!');
+                    console.log('Моделі будинків завантажені!');
                     assetLoader.assetLoaded();
                 },
                 function(xhr) {
@@ -980,66 +729,55 @@
         }
 
         function createSanta() {
-            // Перевіряємо кеш
-            if (modelCache.santa) {
-                santa = modelCache.santa.clone();
-                scene.add(santa);
-                
-                if (santa.animations && santa.animations.length > 0) {
-                    santaMixer = new THREE.AnimationMixer(santa);
-                    const action = santaMixer.clipAction(santa.animations[0]);
-                    action.play();
-                }
-                
-                console.log('Санта завантажений з кешу!');
-                assetLoader.assetLoaded();
-                return;
-            }
-            
             const loader = new THREE.FBXLoader();
             
             loader.load('models/santa.fbx',
-                function(object) {
-                    modelCache.santa = object;
-                    
-                    object.scale.set(2, 2, 2);
-                    object.position.set(0, 0, 5);
-                    object.rotation.y = Math.PI;
+            function(object) {
+                object.scale.set(2, 2, 2);
+                object.position.set(0, 0, 5);
+                object.rotation.y = Math.PI;
 
-                    object.traverse((child) => {
-                        if (child.isMesh) {
-                            child.castShadow = true;
-                            child.receiveShadow = true;
-                            child.frustumCulled = false;
+                object.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
 
-                            if (child.material) {
-                                child.material.skinning = true;
-                                if (child.material.metalness !== undefined) {
-                                    child.material.metalness = 0.1;
-                                    child.material.roughness = 0.8;
-                                }
-                                if (child.material.shininess !== undefined) {
-                                    child.material.shininess = 10;
-                                }
-                                if (child.material.specular) {
-                                    child.material.specular.set(0x111111);
-                                }
-                                child.material.needsUpdate = true;
+                        // ВАЖЛИВО для анімації
+                        child.frustumCulled = false;
+
+                        if (child.material) {
+                            // Для коректної анімації
+                            child.material.skinning = true;
+
+                            // Зменшуємо блиск
+                            if (child.material.metalness !== undefined) {
+                                child.material.metalness = 0.1;
+                                child.material.roughness = 0.8;
                             }
+                            if (child.material.shininess !== undefined) {
+                                child.material.shininess = 10;
+                            }
+                            if (child.material.specular) {
+                                child.material.specular.set(0x111111);
+                            }
+
+                            child.material.needsUpdate = true;
                         }
-                    });
-
-                    if (object.animations && object.animations.length > 0) {
-                        santaMixer = new THREE.AnimationMixer(object);
-                        const action = santaMixer.clipAction(object.animations[0]);
-                        action.play();
                     }
+                });
 
-                    scene.add(object);
-                    santa = object;
-                    console.log('Модель Санти завантажена та закешована!');
-                    assetLoader.assetLoaded();
-                },
+                if (object.animations && object.animations.length > 0) {
+                    santaMixer = new THREE.AnimationMixer(object);
+                    const action = santaMixer.clipAction(object.animations[0]);
+                    action.play();
+                    console.log('Анімацію запущено. Кількість анімацій:', object.animations.length);
+                }
+
+                scene.add(object);
+                santa = object;
+                console.log('Модель Санти завантажена!');
+                assetLoader.assetLoaded();
+            },
                 function(xhr) {
                     const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
                     console.log(`Завантаження Санти: ${percent}%`);
@@ -1062,8 +800,8 @@
             directionalLight.shadow.camera.right = 20;
             directionalLight.shadow.camera.top = 20;
             directionalLight.shadow.camera.bottom = -20;
-            directionalLight.shadow.mapSize.width = 1024;
-            directionalLight.shadow.mapSize.height = 1024;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
             scene.add(directionalLight);
             
             const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
@@ -1081,14 +819,10 @@
             scene.add(sky);
             
             createSnowyRoad();
+            createInitialTrees();
+            createInitialHouses();
             createSnowParticles();
             createSnowfall();
-            
-            // Створюємо початкові дерева та будинки асинхронно
-            setTimeout(() => {
-                createInitialTrees();
-                createInitialHouses();
-            }, 100);
         }
 
         function createSnowyRoad() {
@@ -1099,22 +833,13 @@
                 specular: 0x444444
             });
             
-            // Використовуємо кешовану текстуру, якщо вона є
-            if (modelCache.textures.road) {
-                roadMaterial.map = modelCache.textures.road;
-                roadMaterial.needsUpdate = true;
-                console.log('Використано кешовану текстуру дороги');
-            } else {
-                // Створюємо нову текстуру та кешуємо її
-                createSnowTexture(roadMaterial);
-            }
-            
             ground = new THREE.Mesh(roadGeometry, roadMaterial);
             ground.rotation.x = -Math.PI / 2;
             ground.position.y = -1;
             ground.receiveShadow = true;
             scene.add(ground);
 
+            createSnowTexture(roadMaterial);
             createTireTracks();
             createSnowBanks();
             createRoadMarkings();
@@ -1143,9 +868,6 @@
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
             texture.repeat.set(8, 100);
-            
-            // Кешуємо текстуру
-            modelCache.textures.road = texture;
 
             material.map = texture;
             material.needsUpdate = true;
@@ -1226,7 +948,7 @@
 
         function createSnowfall() {
             const snowGeometry = new THREE.BufferGeometry();
-            const snowCount = 1000; // Зменшено з 1500 до 1000
+            const snowCount = 1000; // Зменшено до 1000
             const positions = [];
             const velocities = [];
             
@@ -1260,15 +982,15 @@
         }
 
         function createInitialTrees() {
-            if (treeModels.length === 0) return;
-            
             for (let i = 0; i < 25; i++) {
                 createMovingTree(-60 + i * 12);
             }
         }
 
         function createMovingTree(zPos) {
-            if (treeModels.length === 0) return;
+            if (treeModels.length === 0) {
+                return;
+            }
             
             const side = Math.random() > 0.5 ? 1 : -1;
             const xPos = side * (12 + Math.random() * 4);
@@ -1282,7 +1004,9 @@
                 return distance < 15 && sameSide;
             });
             
-            if (tooCloseToHouse) return;
+            if (tooCloseToHouse) {
+                return;
+            }
             
             const tooCloseToTree = backgroundTrees.some(tree => {
                 const distance = Math.abs(tree.position.z - zPos);
@@ -1294,7 +1018,9 @@
                 }
             });
             
-            if (tooCloseToTree) return;
+            if (tooCloseToTree) {
+                return;
+            }
             
             const treeModel = treeModels[Math.floor(Math.random() * treeModels.length)];
             const treeInstance = treeModel.clone();
@@ -1316,7 +1042,9 @@
         }
 
         function createMovingHouse(zPos) {
-            if (houseModels.length === 0) return;
+            if (houseModels.length === 0) {
+                return;
+            }
         
             const side = Math.random() > 0.5 ? 1 : -1;
             const xPos = side * (14 + Math.random() * 3);
@@ -1330,7 +1058,9 @@
                 return distance < 15 && sameSide;
             });
             
-            if (tooCloseToTree) return;
+            if (tooCloseToTree) {
+                return;
+            }
             
             const tooCloseToHouse = backgroundHouses.some(house => {
                 const distance = Math.abs(house.position.z - zPos);
@@ -1342,7 +1072,9 @@
                 }
             });
             
-            if (tooCloseToHouse) return;
+            if (tooCloseToHouse) {
+                return;
+            }
         
             const houseModel = houseModels[Math.floor(Math.random() * houseModels.length)];
             const houseInstance = houseModel.clone();
@@ -1364,15 +1096,13 @@
         }
 
         function createInitialHouses() {
-            if (houseModels.length === 0) return;
-            
             for (let i = 0; i < 12; i++) {
                 createMovingHouse(-80 + i * 22);
             }
         }
 
         function createSnowParticles() {
-            const particleCount = 1000; // Зменшено з 1500 до 1000
+            const particleCount = 1000; // Зменшено до 1000
             const geometry = new THREE.BufferGeometry();
             const positions = [];
             const velocities = [];
@@ -1643,12 +1373,15 @@
                 cameraShakeIntensity = 0.15;
                 
                 // Відтворюємо звук стрибка
-                playSound(jumpSound);
+                if (soundEnabled) {
+                    jumpSound.currentTime = 0;
+                    jumpSound.play().catch(e => console.log("Помилка відтворення звуку стрибка"));
+                }
             }
         }
 
         function startGame() {
-            if (!assetsLoaded) return;
+            if (document.getElementById('startBtn').disabled) return;
             
             gameState = 'playing';
             score = 0;
@@ -1662,26 +1395,29 @@
                 santa.position.y = 0;
             }
             
-            // Очищаємо перешкоди, подарунки та ефекти
             obstacles.forEach(obj => scene.remove(obj));
             gifts.forEach(obj => scene.remove(obj));
+            backgroundTrees.forEach(obj => scene.remove(obj));
+            backgroundHouses.forEach(obj => scene.remove(obj));
             starEffects.forEach(obj => scene.remove(obj));
             obstacles = [];
             gifts = [];
+            backgroundTrees = [];
+            backgroundHouses = [];
             starEffects = [];
+            
+            createInitialTrees();
+            createInitialHouses();
             
             document.getElementById('startMenu').classList.add('hidden');
             
             // Запускаємо музику
             if (soundEnabled) {
                 backgroundMusic.currentTime = 0;
-                backgroundMusic.play().catch(e => {
-                    console.log("Не вдалося відтворити музику:", e);
-                });
+                backgroundMusic.play().catch(e => console.log("Автовідтворення заблоковано"));
             }
             
             updateUI();
-            animate();
         }
 
         function updateCamera() {
@@ -1819,7 +1555,10 @@
                         cameraShakeIntensity = 0.3;
                         
                         // Відтворюємо звук зіткнення
-                        playSound(collisionSound);
+                        if (soundEnabled) {
+                            collisionSound.currentTime = 0;
+                            collisionSound.play().catch(e => console.log("Помилка відтворення звуку зіткнення"));
+                        }
                         
                         if (lives <= 0) {
                             gameOver();
@@ -1846,7 +1585,10 @@
                     score += 10;
                     
                     // Відтворюємо звук збору подарунка
-                    playSound(collectSound);
+                    if (soundEnabled) {
+                        collectSound.currentTime = 0;
+                        collectSound.play().catch(e => console.log("Помилка відтворення звуку збору"));
+                    }
                     
                     const starEffect = createStarEffect(gift.position.clone());
                     starEffects.push(starEffect);
@@ -1918,21 +1660,31 @@
         function gameOver() {
             gameState = 'gameOver';
             
-            // Оновлюємо найкращий результат
             const finalScore = Math.floor(score);
             if (finalScore > bestScore) {
                 bestScore = finalScore;
-                saveBestScore();
-                updateBestScoreDisplay();
+                try {
+                    localStorage.setItem('bestScore', bestScore);
+                } catch (error) {
+                    console.log('Не вдалося зберегти найкращий результат:', error);
+                }
             }
             
             // Зупиняємо музику
             backgroundMusic.pause();
             
             // Відтворюємо звук програшу
-            playSound(gameOverSound);
+            if (soundEnabled && gameOverSound) {
+                try {
+                    gameOverSound.currentTime = 0;
+                    gameOverSound.play().catch(e => console.log("Помилка відтворення звуку програшу: ", e));
+                } catch (error) {
+                    console.log("Не вдалося відтворити звук програшу:", error);
+                }
+            }
             
             document.getElementById('finalScore').textContent = finalScore;
+            document.getElementById('finalBestScore').textContent = bestScore;
             document.getElementById('gameOverMenu').classList.remove('hidden');
         }
 
@@ -1951,7 +1703,6 @@
             if (soundEnabled) {
                 backgroundMusic.play().catch(e => console.log("Не вдалося відтворити музику"));
             }
-            animate();
         }
 
         function restartGame() {
@@ -1969,9 +1720,6 @@
             
             // Зупиняємо музику
             backgroundMusic.pause();
-            
-            // Оновлюємо відображення найкращого результату
-            updateBestScoreDisplay();
         }
 
         function toggleSound() {
@@ -1988,11 +1736,6 @@
             }
         }
 
-        function updateBestScore() {
-            // Функція залишена для сумісності
-            updateBestScoreDisplay();
-        }
-
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
@@ -2000,11 +1743,14 @@
         }
 
         function animate() {
+            requestAnimationFrame(animate);
+            
             if (gameState === 'playing') {
-                requestAnimationFrame(animate);
                 update();
-                renderer.render(scene, camera);
             }
+            
+            // ВІДРАЗУ РЕНДЕРИМО СЦЕНУ
+            renderer.render(scene, camera);
         }
 
         window.addEventListener('load', () => {
