@@ -474,6 +474,7 @@
         let bestScore = 0;
         let gameSpeed = 0.3;
         let soundEnabled = true;
+        let audioUnlocked = false;
         let backgroundTrees = [];
         let santaMixer = null;
         let starEffects = [];
@@ -545,6 +546,12 @@
                     startBtn.disabled = false;
                     startBtn.textContent = '🎮 Грати';
                     startBtn.style.cursor = 'pointer';
+                    
+                    // Автоматичне розблокування аудіо для iOS
+                    if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !audioUnlocked) {
+                        showAudioHint();
+                    }
+                    
                     console.log('Всі ассети завантажені! Гра готова!');
                 }, 500);
             }
@@ -592,9 +599,89 @@
             loadAllModels();
             setupEventListeners();
             setupTouchControls();
+            setupAudioUnlock();
             updateBestScore();
             
             window.addEventListener('resize', onWindowResize);
+        }
+
+        function setupAudioUnlock() {
+            // Автоматичне розблокування аудіо при першій взаємодії
+            function unlockAudio() {
+                if (audioUnlocked) return;
+                
+                // Створюємо Audio Context для iOS
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                    try {
+                        const audioContext = new AudioContext();
+                        
+                        // Створюємо беззвучний буфер для активації аудіо
+                        const buffer = audioContext.createBuffer(1, 1, 22050);
+                        const source = audioContext.createBufferSource();
+                        source.buffer = buffer;
+                        source.connect(audioContext.destination);
+                        source.start(0);
+                        
+                        console.log("Audio Context створено для iOS");
+                    } catch (e) {
+                        console.log("Помилка створення Audio Context:", e);
+                    }
+                }
+                
+                // Спроба відтворити короткий тестовий звук
+                if (soundEnabled) {
+                    try {
+                        collectSound.currentTime = 0;
+                        collectSound.volume = 0.01; // Майже беззвучно
+                        collectSound.play().then(() => {
+                            console.log("Аудіо розблоковано!");
+                            audioUnlocked = true;
+                            collectSound.volume = 0.7; // Повертаємо нормальну гучність
+                            showAudioHint();
+                            
+                            // Автоматично запускаємо музику, якщо гра вже почалась
+                            if (gameState === 'playing' && soundEnabled) {
+                                backgroundMusic.currentTime = 0;
+                                backgroundMusic.play().catch(e => {
+                                    console.log("Не вдалося відтворити музику:", e);
+                                });
+                            }
+                        }).catch(e => {
+                            console.log("Тестовий звук не відтворився:", e);
+                        });
+                    } catch (error) {
+                        console.log("Помилка розблокування:", error);
+                    }
+                } else {
+                    audioUnlocked = true;
+                }
+            }
+            
+            // Автоматичне розблокування при будь-якій взаємодії
+            const unlockEvents = ['touchstart', 'click', 'mousedown', 'keydown'];
+            
+            unlockEvents.forEach(eventType => {
+                document.addEventListener(eventType, function unlockHandler() {
+                    if (!audioUnlocked) {
+                        unlockAudio();
+                    }
+                    // Видаляємо обробник після першого спрацьовування
+                    unlockEvents.forEach(type => {
+                        document.removeEventListener(type, unlockHandler);
+                    });
+                }, { once: true });
+            });
+            
+            // Також розблоковуємо при кліку на будь-яку кнопку гри
+            const allButtons = document.querySelectorAll('button');
+            allButtons.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    if (!audioUnlocked) {
+                        unlockAudio();
+                    }
+                });
+            });
         }
 
         function initAudio() {
@@ -612,32 +699,73 @@
             collisionSound.volume = 0.7;
             gameOverSound.volume = 0.6;
             
+            // Налаштування для iOS
+            backgroundMusic.preload = 'auto';
+            collectSound.preload = 'auto';
+            jumpSound.preload = 'auto';
+            collisionSound.preload = 'auto';
+            gameOverSound.preload = 'auto';
+            
             // Перевіряємо завантаження аудіо
             const audioElements = [backgroundMusic, collectSound, jumpSound, collisionSound, gameOverSound];
             let audioLoadedCount = 0;
             
             audioElements.forEach(audio => {
+                // Спочатку завантажуємо аудіо
+                audio.load();
+                
                 audio.addEventListener('canplaythrough', () => {
                     audioLoadedCount++;
+                    console.log(`Аудіо ${audio.id} завантажено`);
                     if (audioLoadedCount === audioElements.length) {
                         console.log('Всі аудіофайли завантажені!');
                     }
                     assetLoader.assetLoaded();
                 });
                 
-                audio.addEventListener('error', () => {
-                    console.log('Помилка завантаження аудіофайлу');
+                audio.addEventListener('error', (e) => {
+                    console.error(`Помилка завантаження аудіофайлу ${audio.id}:`, e);
                     assetLoader.assetError();
                 });
             });
+        }
+
+        function playSound(soundElement) {
+            if (!soundEnabled) return;
             
-            // Автовідтворення при взаємодії
-            document.addEventListener('click', function initAudioOnce() {
-                if (soundEnabled) {
-                    backgroundMusic.play().catch(e => console.log("Автовідтворення заблоковано"));
+            // Якщо аудіо ще не розблоковано, пробуємо розблокувати
+            if (!audioUnlocked && /iPhone|iPad|iPod/.test(navigator.userAgent)) {
+                return; // На iOS чекаємо на взаємодію
+            }
+            
+            try {
+                // Скидаємо та відтворюємо
+                soundElement.currentTime = 0;
+                const playPromise = soundElement.play();
+                
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => {
+                        if (error.name === 'NotAllowedError') {
+                            // Аудіо заблоковано, пробуємо розблокувати
+                            if (!audioUnlocked) {
+                                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                                if (AudioContext) {
+                                    const audioContext = new AudioContext();
+                                    const buffer = audioContext.createBuffer(1, 1, 22050);
+                                    const source = audioContext.createBufferSource();
+                                    source.buffer = buffer;
+                                    source.connect(audioContext.destination);
+                                    source.start(0);
+                                    audioUnlocked = true;
+                                    console.log("Аудіо розблоковано при спробі відтворення");
+                                }
+                            }
+                        }
+                    });
                 }
-                document.removeEventListener('click', initAudioOnce);
-            });
+            } catch (error) {
+                console.log("Помилка відтворення звуку:", error);
+            }
         }
 
         function loadAllModels() {
@@ -1181,6 +1309,21 @@
                 touchStartY = e.touches[0].clientY;
                 touchProcessed = false;
                 e.preventDefault();
+                
+                // Автоматичне розблокування аудіо при першому тапі
+                if (!audioUnlocked) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContext) {
+                        const audioContext = new AudioContext();
+                        const buffer = audioContext.createBuffer(1, 1, 22050);
+                        const source = audioContext.createBufferSource();
+                        source.buffer = buffer;
+                        source.connect(audioContext.destination);
+                        source.start(0);
+                        audioUnlocked = true;
+                        showAudioHint();
+                    }
+                }
             }, { passive: false });
             
             renderer.domElement.addEventListener('touchmove', (e) => {
@@ -1327,6 +1470,26 @@
             document.getElementById('mainMenuBtn').addEventListener('click', showMainMenu);
             
             document.addEventListener('keydown', handleKeyDown);
+            
+            // Автоматичне розблокування аудіо при кліку на будь-яку кнопку
+            const allButtons = document.querySelectorAll('button');
+            allButtons.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    if (!audioUnlocked) {
+                        const AudioContext = window.AudioContext || window.webkitAudioContext;
+                        if (AudioContext) {
+                            const audioContext = new AudioContext();
+                            const buffer = audioContext.createBuffer(1, 1, 22050);
+                            const source = audioContext.createBufferSource();
+                            source.buffer = buffer;
+                            source.connect(audioContext.destination);
+                            source.start(0);
+                            audioUnlocked = true;
+                            showAudioHint();
+                        }
+                    }
+                });
+            });
         }
 
         function handleKeyDown(e) {
@@ -1379,10 +1542,7 @@
                 cameraShakeIntensity = 0.15;
                 
                 // Відтворюємо звук стрибка
-                if (soundEnabled) {
-                    jumpSound.currentTime = 0;
-                    jumpSound.play().catch(e => console.log("Помилка відтворення звуку стрибка"));
-                }
+                playSound(jumpSound);
             }
         }
 
@@ -1419,8 +1579,15 @@
             
             // Запускаємо музику
             if (soundEnabled) {
-                backgroundMusic.currentTime = 0;
-                backgroundMusic.play().catch(e => console.log("Автовідтворення заблоковано"));
+                if (audioUnlocked) {
+                    backgroundMusic.currentTime = 0;
+                    backgroundMusic.play().catch(e => {
+                        console.log("Не вдалося відтворити музику:", e);
+                    });
+                } else {
+                    // Показуємо підказку про аудіо
+                    showAudioHint();
+                }
             }
             
             updateUI();
@@ -1562,10 +1729,7 @@
                         cameraShakeIntensity = 0.3;
                         
                         // Відтворюємо звук зіткнення
-                        if (soundEnabled) {
-                            collisionSound.currentTime = 0;
-                            collisionSound.play().catch(e => console.log("Помилка відтворення звуку зіткнення"));
-                        }
+                        playSound(collisionSound);
                         
                         if (lives <= 0) {
                             gameOver();
@@ -1592,10 +1756,7 @@
                     score += 10;
                     
                     // Відтворюємо звук збору подарунка
-                    if (soundEnabled) {
-                        collectSound.currentTime = 0;
-                        collectSound.play().catch(e => console.log("Помилка відтворення звуку збору"));
-                    }
+                    playSound(collectSound);
                     
                     const starEffect = createStarEffect(gift.position.clone());
                     starEffects.push(starEffect);
@@ -1669,20 +1830,14 @@
             
             if (score > bestScore) {
                 bestScore = Math.floor(score);
+                localStorage.setItem('bestScore', bestScore);
             }
             
             // Зупиняємо музику
             backgroundMusic.pause();
             
             // Відтворюємо звук програшу
-            if (soundEnabled && gameOverSound) {
-                try {
-                    gameOverSound.currentTime = 0;
-                    gameOverSound.play().catch(e => console.log("Помилка відтворення звуку програшу: ", e));
-                } catch (error) {
-                    console.log("Не вдалося відтворити звук програшу:", error);
-                }
-            }
+            playSound(gameOverSound);
             
             document.getElementById('finalScore').textContent = Math.floor(score);
             document.getElementById('finalBestScore').textContent = bestScore;
@@ -1701,7 +1856,7 @@
             gameState = 'playing';
             document.getElementById('pauseMenu').classList.add('hidden');
             // Продовжуємо музику
-            if (soundEnabled) {
+            if (soundEnabled && audioUnlocked) {
                 backgroundMusic.play().catch(e => console.log("Не вдалося відтворити музику"));
             }
             animate();
@@ -1730,7 +1885,7 @@
             soundBtn.textContent = soundEnabled ? '🔊' : '🔇';
             
             if (soundEnabled) {
-                if (gameState === 'playing') {
+                if (gameState === 'playing' && audioUnlocked) {
                     backgroundMusic.play().catch(e => console.log("Не вдалося відтворити музику"));
                 }
             } else {
@@ -1739,6 +1894,10 @@
         }
 
         function updateBestScore() {
+            const savedScore = localStorage.getItem('bestScore');
+            if (savedScore) {
+                bestScore = parseInt(savedScore);
+            }
             document.getElementById('bestScore').textContent = bestScore;
         }
 
