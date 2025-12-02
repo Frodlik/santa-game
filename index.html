@@ -371,19 +371,19 @@
 </head>
 <body>
     <!-- Аудіо елементи -->
-    <audio id="backgroundMusic" loop>
+    <audio id="backgroundMusic" loop preload="auto">
         <source src="sounds/background.mp3" type="audio/mpeg">
     </audio>
-    <audio id="collectSound">
+    <audio id="collectSound" preload="auto">
         <source src="sounds/collect.mp3" type="audio/mpeg">
     </audio>
-    <audio id="jumpSound">
+    <audio id="jumpSound" preload="auto">
         <source src="sounds/jump.mp3" type="audio/mpeg">
     </audio>
-    <audio id="collisionSound">
+    <audio id="collisionSound" preload="auto">
         <source src="sounds/collision.mp3" type="audio/mpeg">
     </audio>
-    <audio id="gameOverSound">
+    <audio id="gameOverSound" preload="auto">
         <source src="sounds/game_over.mp3" type="audio/mpeg">
     </audio>
     
@@ -466,6 +466,15 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 
     <script>
+        // Глобальний кеш моделей
+        const modelCache = {
+            santa: null,
+            tree: null,
+            house: null,
+            textures: {},
+            audio: {}
+        };
+
         let scene, camera, renderer;
         let santa, ground, obstacles = [], gifts = [], particles = [];
         let gameState = 'menu';
@@ -488,9 +497,7 @@
         let currentLane = 1;
         let targetLaneX = 0;
 
-        let treeModelCache = null;
         let treeModels = [];
-        let houseModelCache = null;
         let houseModels = [];
         let backgroundHouses = [];
 
@@ -526,6 +533,7 @@
                 this.totalAssets = 8; // Santa + Tree + House + logo + 5 аудіофайлів
                 this.loadedAssets = 0;
                 this.errors = 0;
+                this.preloadedAssets = new Set();
             }
 
             updateProgress() {
@@ -553,6 +561,9 @@
                     updateBestScore();
                     
                     console.log('Всі ассети завантажені! Гра готова!');
+                    
+                    // Продовжуємо попереднє завантаження інших ассетів у фоновому режимі
+                    this.preloadAdditionalAssets();
                 }, 500);
             }
 
@@ -564,6 +575,70 @@
             assetError() {
                 this.errors++;
                 this.updateProgress();
+            }
+
+            preloadAdditionalAssets() {
+                // Додаткові ассети для передзавантаження
+                const additionalAssets = [
+                    'models/tree.glb',
+                    'models/house.glb',
+                    'models/santa.fbx',
+                    'textures/logo.PNG'
+                ];
+
+                additionalAssets.forEach(asset => {
+                    if (asset.endsWith('.png') || asset.endsWith('.jpg') || asset.endsWith('.jpeg')) {
+                        this.preloadImage(asset);
+                    } else if (asset.endsWith('.glb') || asset.endsWith('.fbx')) {
+                        this.preloadModel(asset);
+                    }
+                });
+            }
+
+            preloadImage(src) {
+                if (this.preloadedAssets.has(src)) return;
+                
+                const img = new Image();
+                img.onload = () => {
+                    console.log(`Передзавантажено зображення: ${src}`);
+                    this.preloadedAssets.add(src);
+                };
+                img.onerror = () => {
+                    console.error(`Помилка передзавантаження зображення: ${src}`);
+                };
+                img.src = src;
+            }
+
+            preloadModel(src) {
+                if (this.preloadedAssets.has(src)) return;
+                
+                console.log(`Починаємо передзавантаження моделі: ${src}`);
+                this.preloadedAssets.add(src);
+                
+                // Просто завантажуємо модель для кешування, але не додаємо до сцени
+                if (src.endsWith('.glb')) {
+                    const loader = new THREE.GLTFLoader();
+                    loader.load(src,
+                        () => {
+                            console.log(`Передзавантажено GLB модель: ${src}`);
+                        },
+                        undefined,
+                        (error) => {
+                            console.error(`Помилка передзавантаження GLB моделі ${src}:`, error);
+                        }
+                    );
+                } else if (src.endsWith('.fbx')) {
+                    const loader = new THREE.FBXLoader();
+                    loader.load(src,
+                        () => {
+                            console.log(`Передзавантажено FBX модель: ${src}`);
+                        },
+                        undefined,
+                        (error) => {
+                            console.error(`Помилка передзавантаження FBX моделі ${src}:`, error);
+                        }
+                    );
+                }
             }
         }
 
@@ -587,7 +662,8 @@
             renderer = new THREE.WebGLRenderer({ 
                 canvas, 
                 antialias: true,
-                alpha: true
+                alpha: true,
+                powerPreference: "high-performance"
             });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
@@ -604,6 +680,41 @@
             setupTouchControls();
             
             window.addEventListener('resize', onWindowResize);
+            
+            // Попереднє завантаження текстур для дороги
+            preloadRoadTextures();
+        }
+
+        function preloadRoadTextures() {
+            // Створюємо текстури для дороги заздалегідь
+            createSnowTextureForCache();
+        }
+
+        function createSnowTextureForCache() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const context = canvas.getContext('2d');
+
+            context.fillStyle = '#f0f8ff';
+            context.fillRect(0, 0, 512, 512);
+
+            context.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            for (let i = 0; i < 5000; i++) {
+                const x = Math.random() * 512;
+                const y = Math.random() * 512;
+                const size = Math.random() * 3 + 1;
+                context.beginPath();
+                context.arc(x, y, size, 0, Math.PI * 2);
+                context.fill();
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(8, 100);
+            
+            modelCache.textures.road = texture;
         }
 
         function loadBestScore() {
@@ -786,8 +897,8 @@
         }
 
         function loadTreeModels() {
-            // Спочатку перевіряємо, чи потрібно завантажувати
-            if (treeModels.length > 0) {
+            // Перевіряємо кеш
+            if (modelCache.tree && treeModels.length > 0) {
                 assetLoader.assetLoaded();
                 return;
             }
@@ -796,9 +907,9 @@
             
             loader.load('models/tree.glb',
                 function(gltf) {
-                    treeModelCache = gltf.scene;
+                    modelCache.tree = gltf.scene;
                     
-                    treeModelCache.traverse((child) => {
+                    modelCache.tree.traverse((child) => {
                         if (child.isMesh) {
                             child.castShadow = true;
                             child.receiveShadow = true;
@@ -807,12 +918,12 @@
                     
                     // Створюємо 3 варіанти дерев
                     for (let i = 0; i < 3; i++) {
-                        const treeVariant = treeModelCache.clone();
+                        const treeVariant = modelCache.tree.clone();
                         treeVariant.scale.setScalar(0.8 + Math.random() * 0.4);
                         treeModels.push(treeVariant);
                     }
                     
-                    console.log('Моделі дерев завантажені!');
+                    console.log('Моделі дерев завантажені та закешовані!');
                     assetLoader.assetLoaded();
                 },
                 function(xhr) {
@@ -828,8 +939,8 @@
         }
 
         function loadHouseModels() {
-            // Спочатку перевіряємо, чи потрібно завантажувати
-            if (houseModels.length > 0) {
+            // Перевіряємо кеш
+            if (modelCache.house && houseModels.length > 0) {
                 assetLoader.assetLoaded();
                 return;
             }
@@ -838,9 +949,9 @@
         
             loader.load('models/house.glb',
                 function(gltf) {
-                    houseModelCache = gltf.scene;
+                    modelCache.house = gltf.scene;
                 
-                    houseModelCache.traverse((child) => {
+                    modelCache.house.traverse((child) => {
                         if (child.isMesh) {
                             child.castShadow = true;
                             child.receiveShadow = true;
@@ -849,12 +960,12 @@
                 
                     // Створюємо 2 варіанти будинків
                     for (let i = 0; i < 2; i++) {
-                        const houseVariant = houseModelCache.clone();
+                        const houseVariant = modelCache.house.clone();
                         houseVariant.scale.setScalar(0.8 + Math.random() * 0.4);
                         houseModels.push(houseVariant);
                     }
                 
-                    console.log('Моделі будинків завантажені!');
+                    console.log('Моделі будинків завантажені та закешовані!');
                     assetLoader.assetLoaded();
                 },
                 function(xhr) {
@@ -869,8 +980,18 @@
         }
 
         function createSanta() {
-            // Перевіряємо, чи Санта вже завантажений
-            if (santa) {
+            // Перевіряємо кеш
+            if (modelCache.santa) {
+                santa = modelCache.santa.clone();
+                scene.add(santa);
+                
+                if (santa.animations && santa.animations.length > 0) {
+                    santaMixer = new THREE.AnimationMixer(santa);
+                    const action = santaMixer.clipAction(santa.animations[0]);
+                    action.play();
+                }
+                
+                console.log('Санта завантажений з кешу!');
                 assetLoader.assetLoaded();
                 return;
             }
@@ -878,45 +999,47 @@
             const loader = new THREE.FBXLoader();
             
             loader.load('models/santa.fbx',
-            function(object) {
-                object.scale.set(2, 2, 2);
-                object.position.set(0, 0, 5);
-                object.rotation.y = Math.PI;
+                function(object) {
+                    modelCache.santa = object;
+                    
+                    object.scale.set(2, 2, 2);
+                    object.position.set(0, 0, 5);
+                    object.rotation.y = Math.PI;
 
-                object.traverse((child) => {
-                    if (child.isMesh) {
-                        child.castShadow = true;
-                        child.receiveShadow = true;
-                        child.frustumCulled = false;
+                    object.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                            child.frustumCulled = false;
 
-                        if (child.material) {
-                            child.material.skinning = true;
-                            if (child.material.metalness !== undefined) {
-                                child.material.metalness = 0.1;
-                                child.material.roughness = 0.8;
+                            if (child.material) {
+                                child.material.skinning = true;
+                                if (child.material.metalness !== undefined) {
+                                    child.material.metalness = 0.1;
+                                    child.material.roughness = 0.8;
+                                }
+                                if (child.material.shininess !== undefined) {
+                                    child.material.shininess = 10;
+                                }
+                                if (child.material.specular) {
+                                    child.material.specular.set(0x111111);
+                                }
+                                child.material.needsUpdate = true;
                             }
-                            if (child.material.shininess !== undefined) {
-                                child.material.shininess = 10;
-                            }
-                            if (child.material.specular) {
-                                child.material.specular.set(0x111111);
-                            }
-                            child.material.needsUpdate = true;
                         }
+                    });
+
+                    if (object.animations && object.animations.length > 0) {
+                        santaMixer = new THREE.AnimationMixer(object);
+                        const action = santaMixer.clipAction(object.animations[0]);
+                        action.play();
                     }
-                });
 
-                if (object.animations && object.animations.length > 0) {
-                    santaMixer = new THREE.AnimationMixer(object);
-                    const action = santaMixer.clipAction(object.animations[0]);
-                    action.play();
-                }
-
-                scene.add(object);
-                santa = object;
-                console.log('Модель Санти завантажена!');
-                assetLoader.assetLoaded();
-            },
+                    scene.add(object);
+                    santa = object;
+                    console.log('Модель Санти завантажена та закешована!');
+                    assetLoader.assetLoaded();
+                },
                 function(xhr) {
                     const percent = (xhr.loaded / xhr.total * 100).toFixed(0);
                     console.log(`Завантаження Санти: ${percent}%`);
@@ -939,8 +1062,8 @@
             directionalLight.shadow.camera.right = 20;
             directionalLight.shadow.camera.top = 20;
             directionalLight.shadow.camera.bottom = -20;
-            directionalLight.shadow.mapSize.width = 2048;
-            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.mapSize.width = 1024;
+            directionalLight.shadow.mapSize.height = 1024;
             scene.add(directionalLight);
             
             const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
@@ -976,13 +1099,22 @@
                 specular: 0x444444
             });
             
+            // Використовуємо кешовану текстуру, якщо вона є
+            if (modelCache.textures.road) {
+                roadMaterial.map = modelCache.textures.road;
+                roadMaterial.needsUpdate = true;
+                console.log('Використано кешовану текстуру дороги');
+            } else {
+                // Створюємо нову текстуру та кешуємо її
+                createSnowTexture(roadMaterial);
+            }
+            
             ground = new THREE.Mesh(roadGeometry, roadMaterial);
             ground.rotation.x = -Math.PI / 2;
             ground.position.y = -1;
             ground.receiveShadow = true;
             scene.add(ground);
 
-            createSnowTexture(roadMaterial);
             createTireTracks();
             createSnowBanks();
             createRoadMarkings();
@@ -1011,6 +1143,9 @@
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
             texture.repeat.set(8, 100);
+            
+            // Кешуємо текстуру
+            modelCache.textures.road = texture;
 
             material.map = texture;
             material.needsUpdate = true;
@@ -1091,7 +1226,7 @@
 
         function createSnowfall() {
             const snowGeometry = new THREE.BufferGeometry();
-            const snowCount = 1500;
+            const snowCount = 1000; // Зменшено з 1500 до 1000
             const positions = [];
             const velocities = [];
             
@@ -1237,7 +1372,7 @@
         }
 
         function createSnowParticles() {
-            const particleCount = 1500;
+            const particleCount = 1000; // Зменшено з 1500 до 1000
             const geometry = new THREE.BufferGeometry();
             const positions = [];
             const velocities = [];
